@@ -1,11 +1,15 @@
 #ifndef SIMULATOR_HPP
 #define SIMULATOR_HPP
 
-#include <vector>
 #include <string>
-#include "point.hpp"
-#include "centroid.hpp"
+#include <vector>
 
+#include "centroid.hpp"
+#include "point.hpp"
+#include "renderer.hpp"
+
+constexpr double kWorldMin = 0.0;
+constexpr double kWorldMax = 1000.0;
 
 struct CentroidCache {
   double sum_x{0.0};
@@ -18,22 +22,31 @@ struct CentroidCache {
 };
 
 class Simulator {
-  public:
-    Simulator();
+ public:
+  Simulator();
 
-    void KMeansIteration();
-    
-    
-    void Reset();
-    void LoadFromFile(const std::string& filename);
-    
-    private:
-    std::vector<Point> points_;
-    std::vector<Centroid> centroids_;
-    double current_cost_;
+  void KMeansIteration();
+  void Run();
 
-    double SquaredEuclidianDistance(const double x1, const double y1, const double x2, const double y2) const;
-    double ClosestCentroid(Point& point);
+  void Reset(const bool complete_reset);
+  void LoadFromFile(const std::string& filename);
+
+ private:
+  std::vector<Point> points_;
+  std::vector<Centroid> centroids_;
+  double current_cost_;
+  Renderer renderer_;
+  int iteration_;
+  bool running_;
+  int k_;
+  bool converged_;
+
+  double SquaredEuclidianDistance(const double x1, const double y1,
+                                  const double x2, const double y2) const;
+  double ClosestCentroid(Point& point);
+
+  double GenerateRandomDouble();
+  void GenerateCentroids();
 };
 
 #endif
