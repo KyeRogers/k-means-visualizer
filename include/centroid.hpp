@@ -3,19 +3,20 @@
 
 class Centroid {
   public:
-    Centroid(const int x, const int y);
+    Centroid();
+    Centroid(const double x, const double y);
 
     // getters 
-    int GetX() const;
-    int GetY() const;
+    double GetX() const;
+    double GetY() const;
 
     // setters 
-    void SetX(const int x);
-    void SetY(const int y);
+    void SetX(const double x);
+    void SetY(const double y);
 
   private:
-    int x_coordenate_;
-    int y_coordenate_;
+    double x_coordenate_;
+    double y_coordenate_;
 };
 
 #endif

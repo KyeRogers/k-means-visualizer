@@ -3,21 +3,22 @@
 
 class Point {
     public:
-      Point(const int x, const int y, const int centroid);
+      Point();
+      Point(const double x, const double y, const int centroid);
 
       // getters
-      int GetX() const;
-      int GetY() const;
+      double GetX() const;
+      double GetY() const;
       int GetCentroid() const;
 
       // setters 
-      void SetX(const int x);
-      void SetY(const int y);
+      void SetX(const double x);
+      void SetY(const double y);
       void SetCentroid(const int centroid);
       
     private:
-      int x_coordenate_;
-      int y_coordenate_;
+      double x_coordenate_;
+      double y_coordenate_;
       int centroid_; // index of which centroid it belongs to
 };
 

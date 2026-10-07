@@ -20,7 +20,11 @@ FetchContent_MakeAvailable(raylib)
 
 # ---- EXECUTABLE CONFIGURATION ----
 add_executable(k-means
+  src/main.cpp
   src/point.cpp
+  src/renderer.cpp
+  src/simulator.cpp
+  src/centroid.cpp
 )
 
 target_include_directories(k-means PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
