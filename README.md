@@ -29,19 +29,48 @@ Through this project I aim to understand:
 * The effect of choosing different values of \(K\)
 * Limitations of K-Means on non-spherical or irregularly shaped data
 
-## Planned Features
+## Features
 
-* Generate 2D datasets
-* Place points manually
-* Choose \(K\)
-* Randomly initialize centroids
-* Visualize cluster assignments using colors
-* Visualize centroid movement
-* Step through individual iterations
-* Run the algorithm continuously
-* Display the current iteration and objective/loss
-* Detect convergence
-* Experiment with different datasets and initializations
+* Add points to the 2D map with the mouse or load point coordinates from a
+  data file.
+* Choose the number of clusters \(K\) and initialize centroids using:
+  * **Randomized** positions.
+  * **K-means++**, which selects seeds from the dataset using squared-distance
+    weighting. If points are added after choosing this mode, seeding is
+    deferred until the first iteration.
+  * **Manual** placement on the map.
+* View cluster assignments, centroid movement, iteration count, and clustering
+  cost.
+* Step through iterations or run automatically. Automatic run starts slowly
+  (one iteration every 2.5 seconds); use the `-` / `+` buttons or `[` / `]`
+  keys to change its speed.
+* Run multiple independent initializations and compare their costs and best
+  clustering.
+* View the final clustering map from the convergence summary.
+* **Soft reset** to rerun with the same points, \(K\), and initialization
+  method.
+* **Hard reset** to keep the points while changing \(K\) or the initialization
+  method. The main menu starts over with an empty dataset.
+* Pan and zoom the map.
+
+## Controls
+
+| Action | Control |
+| --- | --- |
+| Add a data point | Left-click the map |
+| Step one iteration | `Space` or **STEP** |
+| Start / stop automatic run | `R` or **RUN / STOP** |
+| Adjust automatic run speed | `[` / `]` or `-` / `+` |
+| Soft reset | `Esc` or **SOFT RESET** |
+| Change \(K\) or initialization method, keeping points | **HARD RESET** |
+| Open multi-run setup | `M` or **MULTI-RUN** |
+| Return to the main menu | `M` / `Esc` in result screens or **MAIN MENU** |
+| Reset map view | `F2` |
+| Pan / zoom | Middle-drag / mouse wheel |
+| Open help and load data | `F1` or `H` |
+
+In manual initialization, right-click to place centroids; use `Z` or
+`Backspace` to undo the last placement and `R` to clear placements.
 
 ## Implementation
 

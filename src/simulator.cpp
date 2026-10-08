@@ -1,5 +1,6 @@
 #include "simulator.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <random>
@@ -21,21 +22,35 @@ Simulator::Simulator()
       renderer_(),
       iteration_{0},
       running_{false},
+      run_interval_seconds_{2.5},
+      run_elapsed_seconds_{0.0},
       k_{0},
-      converged_{false} {};
+      converged_{false},
+      centroid_mode_{Renderer::CentroidInitialization::Randomized},
+      deferred_kmeans_plus_plus_{false} {};
 
 void Simulator::Reset(const bool complete_reset) {
   if (!complete_reset) {
     for (Point& point : points_) {
       point.SetCentroid(0);
     }
-    GenerateCentroids();
+    if (centroid_mode_ == Renderer::CentroidInitialization::Manual) {
+      centroids_ = initial_centroids_;
+      deferred_kmeans_plus_plus_ = false;
+    } else {
+      GenerateCentroids();
+    }
   } else {
     points_.clear();
     centroids_.clear();
+    initial_centroids_.clear();
+    deferred_kmeans_plus_plus_ = false;
   }
   iteration_ = 0;
+  current_cost_ = 0.0;
   converged_ = false;
+  running_ = false;
+  run_elapsed_seconds_ = 0.0;
 }
 
 void Simulator::LoadFromFile(const std::string& filename) {
@@ -63,7 +78,26 @@ void Simulator::Run() {
 
     if (events.k_selected) {
       k_ = events.k;
-      GenerateCentroids();
+      centroid_mode_ = events.initialization_method;
+      manual_centroids_ = events.manual_centroids;
+      for (Point& point : points_) {
+        point.SetCentroid(0);
+      }
+      centroids_.clear();
+      deferred_kmeans_plus_plus_ = false;
+      if (centroid_mode_ == Renderer::CentroidInitialization::Manual) {
+        for (const Vector2& position : manual_centroids_) {
+          centroids_.emplace_back(position.x, position.y);
+        }
+      } else {
+        GenerateCentroids();
+      }
+      initial_centroids_ = centroids_;
+      iteration_ = 0;
+      current_cost_ = 0;
+      converged_ = false;
+      running_ = false;
+      run_elapsed_seconds_ = 0.0;
     }
 
     if (events.load_file) {
@@ -76,8 +110,15 @@ void Simulator::Run() {
     }
 
     if (events.main_menu) {
-      renderer_.Initialize(kWorldMin, kWorldMax);
+      renderer_.ShowMainMenu();
       Reset(true);
+    }
+
+    if (events.hard_reset_requested) {
+      renderer_.BeginHardReset(k_, centroid_mode_);
+      running_ = false;
+      converged_ = false;
+      run_elapsed_seconds_ = 0.0;
     }
 
     if (events.add_point) {
@@ -90,6 +131,13 @@ void Simulator::Run() {
 
     if (events.toggle_running) {
       running_ = !running_;
+      run_elapsed_seconds_ = 0.0;
+    }
+
+    if (events.speed_change > 0) {
+      run_interval_seconds_ = std::max(0.1, run_interval_seconds_ * 0.5);
+    } else if (events.speed_change < 0) {
+      run_interval_seconds_ = std::min(5.0, run_interval_seconds_ * 2.0);
     }
 
     if (events.reset) {
@@ -97,17 +145,30 @@ void Simulator::Run() {
     }
 
     // 3. Automatically run K-means if enabled
-    if (running_) {
-      KMeansIteration();
+    if (running_ && !converged_) {
+      run_elapsed_seconds_ += GetFrameTime();
+      if (run_elapsed_seconds_ >= run_interval_seconds_) {
+        KMeansIteration();
+        run_elapsed_seconds_ = 0.0;
+      }
+    } else if (converged_) {
+      running_ = false;
     }
 
     // 4. Render the NEW state
     renderer_.Render(points_, centroids_, current_cost_, iteration_,
-                     converged_);
+                     converged_, run_interval_seconds_);
   }
 }
 /** @brief returns true if succeded, false if converged  */
 void Simulator::KMeansIteration() {
+  if (deferred_kmeans_plus_plus_ && !points_.empty()) {
+    GenerateCentroids();
+  }
+  if (points_.empty() || centroids_.empty()) {
+    return;
+  }
+
   iteration_++;
   bool changed{false};
   // asign each point to the nearest centroid
@@ -127,8 +188,10 @@ void Simulator::KMeansIteration() {
   }
 
   for (int i{0}; i < centroids_.size(); i++) {
-    centroids_[i].SetX(centroid_cache[i].NewX());
-    centroids_[i].SetY(centroid_cache[i].NewY());
+    if (centroid_cache[i].count > 0) {
+      centroids_[i].SetX(centroid_cache[i].NewX());
+      centroids_[i].SetY(centroid_cache[i].NewY());
+    }
   }
 
   if (changed == false) {
@@ -194,10 +257,80 @@ double Simulator::GenerateRandomDouble() {
 }
 
 void Simulator::GenerateCentroids() {
-  centroids_.clear();
+  if (centroid_mode_ == Renderer::CentroidInitialization::Manual) {
+    return;
+  }
 
-  for (int i = 0; i < k_; i++) {
-    centroids_.push_back(
-        Centroid(GenerateRandomDouble(), GenerateRandomDouble()));
+  centroids_.clear();
+  deferred_kmeans_plus_plus_ = false;
+
+  if (centroid_mode_ == Renderer::CentroidInitialization::Randomized) {
+    for (int i = 0; i < k_; i++) {
+      centroids_.emplace_back(GenerateRandomDouble(), GenerateRandomDouble());
+    }
+    return;
+  }
+
+  if (points_.empty()) {
+    deferred_kmeans_plus_plus_ = true;
+    for (int i = 0; i < k_; i++) {
+      centroids_.emplace_back(GenerateRandomDouble(), GenerateRandomDouble());
+    }
+    return;
+  }
+
+  std::mt19937 generator(std::random_device{}());
+  std::uniform_int_distribution<std::size_t> first_point(0,
+                                                         points_.size() - 1);
+  const std::size_t first_index = first_point(generator);
+  const Point& first = points_[first_index];
+  centroids_.emplace_back(first.GetX(), first.GetY());
+  std::vector<bool> selected_points(points_.size(), false);
+  selected_points[first_index] = true;
+
+  while (centroids_.size() < static_cast<std::size_t>(k_)) {
+    std::vector<double> weights(points_.size(), 0.0);
+    double total_weight = 0.0;
+
+    for (std::size_t i = 0; i < points_.size(); ++i) {
+      double nearest_distance = __DBL_MAX__;
+      for (const Centroid& centroid : centroids_) {
+        nearest_distance =
+            std::min(nearest_distance,
+                     SquaredEuclidianDistance(
+                         points_[i].GetX(), points_[i].GetY(),
+                         centroid.GetX(), centroid.GetY()));
+      }
+      weights[i] = nearest_distance;
+      total_weight += nearest_distance;
+    }
+
+    std::size_t selected_point = 0;
+    if (total_weight > 0.0) {
+      std::discrete_distribution<std::size_t> choose_point(weights.begin(),
+                                                           weights.end());
+      selected_point = choose_point(generator);
+    } else {
+      std::vector<std::size_t> unselected_points;
+      for (std::size_t i = 0; i < selected_points.size(); ++i) {
+        if (!selected_points[i]) {
+          unselected_points.push_back(i);
+        }
+      }
+
+      if (unselected_points.empty()) {
+        std::uniform_int_distribution<std::size_t> choose_point(
+            0, points_.size() - 1);
+        selected_point = choose_point(generator);
+      } else {
+        std::uniform_int_distribution<std::size_t> choose_point(
+            0, unselected_points.size() - 1);
+        selected_point = unselected_points[choose_point(generator)];
+      }
+    }
+
+    selected_points[selected_point] = true;
+    centroids_.emplace_back(points_[selected_point].GetX(),
+                            points_[selected_point].GetY());
   }
 }

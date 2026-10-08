@@ -10,12 +10,17 @@
 
 class Renderer {
  public:
+  enum class CentroidInitialization { Randomized, KMeansPlusPlus, Manual };
+
   /**
    * Contains user input events reported to the simulator.
    */
   struct InputEvents {
     bool k_selected = false;
     int k = 2;
+    CentroidInitialization initialization_method =
+        CentroidInitialization::Randomized;
+    std::vector<Vector2> manual_centroids;
 
     bool load_file = false;
     std::string load_filename;
@@ -26,9 +31,11 @@ class Renderer {
 
     bool step = false;
     bool toggle_running = false;
+    int speed_change = 0;
 
     bool reset = false;
     bool main_menu = false;
+    bool hard_reset_requested = false;
 
     // Multi-run mode.
     bool multi_run_requested = false;
@@ -49,7 +56,7 @@ class Renderer {
 
   void Render(const std::vector<Point>& points,
               const std::vector<Centroid>& centroids, double total_cost,
-              int iteration, bool converged);
+              int iteration, bool converged, double run_interval_seconds);
 
   /**
    * Supplies the result of a multi-run experiment.
@@ -72,6 +79,9 @@ class Renderer {
    * previous multi-run result.
    */
   void ClearMultiRunResults();
+
+  void BeginHardReset(int k, CentroidInitialization method);
+  void ShowMainMenu();
 
   void Close();
 
@@ -101,13 +111,17 @@ class Renderer {
   static constexpr double kDefaultWorldMax = 1000.0;
 
   void DrawTopBar(int k, int iteration, double total_cost) const;
-  void DrawBottomBar() const;
+  void DrawBottomBar(double run_interval_seconds) const;
   void DrawSidePanel(int k) const;
   void DrawHelp() const;
   void DrawSetup() const;
+  void DrawManualSetup(const std::vector<Point>& points) const;
 
   void DrawMultiRunSetup() const;
   void DrawMultiRunResults() const;
+  void DrawConvergedMap(const std::vector<Point>& points,
+                        const std::vector<Centroid>& centroids,
+                        double total_cost, int iteration) const;
 
   void DrawConvergedScreen(const std::vector<Point>& points,
                            const std::vector<Centroid>& centroids,
@@ -116,16 +130,20 @@ class Renderer {
   void DrawButton(Rectangle rectangle, const char* text,
                   bool selected = false) const;
 
-  void DrawPoints(const std::vector<Point>& points) const;
-  void DrawCentroids(const std::vector<Centroid>& centroids) const;
+  void DrawPoints(const std::vector<Point>& points, Rectangle clip) const;
+  void DrawCentroids(const std::vector<Centroid>& centroids,
+                     Rectangle clip) const;
 
   Color GetPointColor(int centroid) const;
   Color GetCentroidColor(int centroid_index) const;
 
   Vector2 WorldToScreen(Vector2 point) const;
+  Vector2 WorldToScreen(Vector2 point, Rectangle plot) const;
   Vector2 ScreenToWorld(Vector2 point) const;
+  Vector2 ScreenToWorld(Vector2 point, Rectangle plot) const;
 
   bool IsPointInsidePlot(Vector2 point) const;
+  bool IsPointInsidePlot(Vector2 point, Rectangle plot) const;
 
   void FitView(const std::vector<Point>& points,
                const std::vector<Centroid>& centroids);
@@ -137,7 +155,13 @@ class Renderer {
 
   bool show_multi_run_setup_ = false;
   bool show_multi_run_results_ = false;
+  bool show_manual_setup_ = false;
+  bool show_converged_map_ = false;
+  bool hard_reset_setup_ = false;
   int selected_runs_ = kDefaultRuns;
+
+  CentroidInitialization selected_method_ = CentroidInitialization::Randomized;
+  std::vector<Vector2> manual_centroids_;
 
   std::vector<double> multi_run_costs_;
   std::vector<Point> multi_run_points_;

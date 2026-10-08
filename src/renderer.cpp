@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 
 namespace {
@@ -44,10 +45,10 @@ void Renderer::Initialize(double world_min, double world_max) {
 
   world_min_ = world_min;
   world_max_ = world_max;
-  
+
   InitWindow(screen_width_, screen_height_, "K-Means Visualizer");
-  SetTargetFPS(60);
   SetExitKey(KEY_Q);
+  SetTargetFPS(60);
 
   filename_input_.clear();
   filename_active_ = false;
@@ -58,6 +59,11 @@ void Renderer::Initialize(double world_min, double world_max) {
   selected_runs_ = kDefaultRuns;
   show_multi_run_setup_ = false;
   show_multi_run_results_ = false;
+  show_manual_setup_ = false;
+  show_converged_map_ = false;
+  hard_reset_setup_ = false;
+  selected_method_ = CentroidInitialization::Randomized;
+  manual_centroids_.clear();
   multi_run_costs_.clear();
   multi_run_points_.clear();
   multi_run_centroids_.clear();
@@ -135,7 +141,7 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     float wheel = GetMouseWheelMove();
     if (wheel != 0.0f && !multi_run_costs_.empty()) {
       Vector2 mouse = GetMousePosition();
-      int cost_panel_x = static_cast<int>(screen_width_ * 0.68f);
+      int cost_panel_x = static_cast<int>(screen_width_ * 0.67f);
 
       if (mouse.x >= cost_panel_x && mouse.y >= kTopBarHeight) {
         const int rows =
@@ -156,7 +162,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
       Vector2 mouse = GetMousePosition();
 
-      Rectangle menu_button = {20.0f, screen_height_ - 48.0f, 150.0f, 36.0f};
+      Rectangle menu_button = {20.0f, screen_height_ - kBottomBarHeight + 11.0f,
+                               150.0f, 36.0f};
 
       if (CheckCollisionPointRec(mouse, menu_button)) {
         events.main_menu = true;
@@ -173,6 +180,11 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
   // ------------------------------------------------------------
 
   if (show_multi_run_setup_) {
+    if (IsKeyPressed(KEY_M)) {
+      events.main_menu = true;
+      return events;
+    }
+
     if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A)) {
       selected_runs_ = std::max(kMinRuns, selected_runs_ - 1);
     }
@@ -194,6 +206,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
       Vector2 mouse = GetMousePosition();
 
+      Rectangle menu_button = {20.0f, screen_height_ - kBottomBarHeight + 11.0f,
+                               150.0f, 36.0f};
       Rectangle minus_button = {screen_width_ / 2.0f - 120.0f,
                                 screen_height_ / 2.0f - 20.0f, 50.0f, 40.0f};
 
@@ -206,7 +220,9 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       Rectangle cancel_button = {screen_width_ / 2.0f - 100.0f,
                                  screen_height_ / 2.0f + 110.0f, 200.0f, 38.0f};
 
-      if (CheckCollisionPointRec(mouse, minus_button)) {
+      if (CheckCollisionPointRec(mouse, menu_button)) {
+        events.main_menu = true;
+      } else if (CheckCollisionPointRec(mouse, minus_button)) {
         selected_runs_ = std::max(kMinRuns, selected_runs_ - 1);
       } else if (CheckCollisionPointRec(mouse, plus_button)) {
         selected_runs_ = std::min(kMaxRuns, selected_runs_ + 1);
@@ -223,6 +239,96 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
   }
 
   // ------------------------------------------------------------
+  // MANUAL CENTROID SETUP
+  // ------------------------------------------------------------
+
+  if (show_manual_setup_) {
+    if (IsKeyPressed(KEY_M)) {
+      events.main_menu = true;
+      return events;
+    }
+
+    if (IsKeyPressed(KEY_ESCAPE)) {
+      show_manual_setup_ = false;
+      manual_centroids_.clear();
+      show_setup_ = true;
+      return events;
+    }
+
+    if (IsKeyPressed(KEY_Z) || IsKeyPressed(KEY_BACKSPACE)) {
+      if (!manual_centroids_.empty()) {
+        manual_centroids_.pop_back();
+      }
+    }
+
+    if (IsKeyPressed(KEY_R)) {
+      manual_centroids_.clear();
+    }
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) &&
+        static_cast<int>(manual_centroids_.size()) < selected_k_) {
+      Vector2 mouse = GetMousePosition();
+      Rectangle manual_plot = {
+          static_cast<float>(kLeftPanelWidth), 70.0f,
+          static_cast<float>(screen_width_ - kLeftPanelWidth),
+          static_cast<float>(screen_height_ - 70 - kBottomBarHeight)};
+
+      if (IsPointInsidePlot(mouse, manual_plot)) {
+        manual_centroids_.push_back(ScreenToWorld(mouse, manual_plot));
+      }
+    }
+
+    bool ready = static_cast<int>(manual_centroids_.size()) == selected_k_;
+
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+      if (ready) {
+        events.k_selected = true;
+        events.k = selected_k_;
+        events.initialization_method = CentroidInitialization::Manual;
+        events.manual_centroids = manual_centroids_;
+        show_manual_setup_ = false;
+        hard_reset_setup_ = false;
+      }
+    }
+
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+      Vector2 mouse = GetMousePosition();
+      Rectangle top_menu_button = {
+          static_cast<float>(screen_width_) - 165.0f, 18.0f, 145.0f, 34.0f};
+      Rectangle start_button = {
+          static_cast<float>(screen_width_) / 2.0f - 100.0f,
+          static_cast<float>(screen_height_) - 100.0f, 200.0f, 42.0f};
+
+      Rectangle back_button = {
+          20.0f, static_cast<float>(screen_height_) - 52.0f, 120.0f, 36.0f};
+      Rectangle footer_menu_button = {
+          155.0f, static_cast<float>(screen_height_) - 52.0f, 150.0f, 36.0f};
+
+      if (CheckCollisionPointRec(mouse, start_button) && ready) {
+        events.k_selected = true;
+        events.k = selected_k_;
+        events.initialization_method = CentroidInitialization::Manual;
+        events.manual_centroids = manual_centroids_;
+        show_manual_setup_ = false;
+        hard_reset_setup_ = false;
+      } else if (CheckCollisionPointRec(mouse, top_menu_button) ||
+                 CheckCollisionPointRec(mouse, footer_menu_button) ||
+                 CheckCollisionPointRec(mouse, back_button)) {
+        if (CheckCollisionPointRec(mouse, top_menu_button) ||
+            CheckCollisionPointRec(mouse, footer_menu_button)) {
+          events.main_menu = true;
+          return events;
+        }
+        show_manual_setup_ = false;
+        manual_centroids_.clear();
+        show_setup_ = true;
+      }
+    }
+
+    return events;
+  }
+
+  // ------------------------------------------------------------
   // CONVERGED SCREEN
   // ------------------------------------------------------------
   //
@@ -232,25 +338,80 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
   if (converged) {
     if (IsKeyPressed(KEY_R) || IsKeyPressed(KEY_ENTER)) {
       events.reset = true;
+      show_converged_map_ = false;
     }
 
     if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_M)) {
       events.main_menu = true;
+      show_converged_map_ = false;
+    }
+
+    if (IsKeyPressed(KEY_V)) {
+      show_converged_map_ = !show_converged_map_;
     }
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
       Vector2 mouse = GetMousePosition();
 
-      Rectangle reset_button = {screen_width_ / 2.0f - 190.0f,
-                                screen_height_ / 2.0f + 90.0f, 160.0f, 45.0f};
+      if (show_converged_map_) {
+        const float footer_y =
+            static_cast<float>(screen_height_ - kBottomBarHeight + 11);
+        Rectangle summary_button = {20.0f, footer_y, 140.0f, 36.0f};
+        Rectangle reset_button = {170.0f, footer_y, 100.0f, 36.0f};
+        Rectangle menu_button = {280.0f, footer_y, 150.0f, 36.0f};
+        Rectangle hard_reset_button = {440.0f, footer_y, 150.0f, 36.0f};
 
-      Rectangle menu_button = {screen_width_ / 2.0f + 30.0f,
-                               screen_height_ / 2.0f + 90.0f, 160.0f, 45.0f};
+        if (CheckCollisionPointRec(mouse, summary_button)) {
+          show_converged_map_ = false;
+        } else if (CheckCollisionPointRec(mouse, reset_button)) {
+          events.reset = true;
+          show_converged_map_ = false;
+        } else if (CheckCollisionPointRec(mouse, menu_button)) {
+          events.main_menu = true;
+          show_converged_map_ = false;
+        } else if (CheckCollisionPointRec(mouse, hard_reset_button)) {
+          events.hard_reset_requested = true;
+          show_converged_map_ = false;
+        }
+      } else {
+        const float button_y = screen_height_ / 2.0f + 90.0f;
+        Rectangle map_button = {screen_width_ / 2.0f - 270.0f, button_y,
+                                160.0f, 45.0f};
+        Rectangle reset_button = {screen_width_ / 2.0f - 80.0f, button_y,
+                                  160.0f, 45.0f};
+        Rectangle menu_button = {screen_width_ / 2.0f + 110.0f, button_y,
+                                 160.0f, 45.0f};
+        Rectangle hard_reset_button = {
+            screen_width_ / 2.0f + 300.0f, button_y, 160.0f, 45.0f};
 
-      if (CheckCollisionPointRec(mouse, reset_button)) {
-        events.reset = true;
-      } else if (CheckCollisionPointRec(mouse, menu_button)) {
-        events.main_menu = true;
+        if (CheckCollisionPointRec(mouse, map_button)) {
+          show_converged_map_ = true;
+        } else if (CheckCollisionPointRec(mouse, reset_button)) {
+          events.reset = true;
+        } else if (CheckCollisionPointRec(mouse, menu_button)) {
+          events.main_menu = true;
+        } else if (CheckCollisionPointRec(mouse, hard_reset_button)) {
+          events.hard_reset_requested = true;
+        }
+      }
+    }
+
+    if (show_converged_map_) {
+      if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
+        Vector2 delta = GetMouseDelta();
+        pan_.x += delta.x;
+        pan_.y += delta.y;
+      }
+
+      float wheel = GetMouseWheelMove();
+      if (wheel != 0.0f) {
+        Vector2 mouse = GetMousePosition();
+        Vector2 before_zoom = ScreenToWorld(mouse);
+        zoom_ = ClampFloat(zoom_ * (wheel > 0.0f ? 1.1f : 1.0f / 1.1f),
+                           0.1f, 20.0f);
+        Vector2 after_zoom = WorldToScreen(before_zoom);
+        pan_.x += mouse.x - after_zoom.x;
+        pan_.y += mouse.y - after_zoom.y;
       }
     }
 
@@ -262,6 +423,18 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
   // ------------------------------------------------------------
 
   if (show_setup_) {
+    Rectangle menu_button = {
+        static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f, 34.0f};
+    if (hard_reset_setup_ && IsKeyPressed(KEY_ESCAPE)) {
+      show_setup_ = false;
+      hard_reset_setup_ = false;
+      return events;
+    }
+    if (IsKeyPressed(KEY_M)) {
+      events.main_menu = true;
+      return events;
+    }
+
     if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A)) {
       selected_k_ = std::max(kMinK, selected_k_ - 1);
     }
@@ -270,32 +443,81 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       selected_k_ = std::min(kMaxK, selected_k_ + 1);
     }
 
-    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+    if (IsKeyPressed(KEY_ONE)) {
+      selected_method_ = CentroidInitialization::Randomized;
+    }
+    if (IsKeyPressed(KEY_TWO)) {
+      selected_method_ = CentroidInitialization::KMeansPlusPlus;
+    }
+    if (IsKeyPressed(KEY_THREE)) {
+      selected_method_ = CentroidInitialization::Manual;
+    }
+
+    auto begin_selection = [&]() {
+      if (selected_method_ == CentroidInitialization::Manual) {
+        manual_centroids_.clear();
+        show_manual_setup_ = true;
+        show_setup_ = false;
+        return;
+      }
+
       events.k_selected = true;
       events.k = selected_k_;
+      events.initialization_method = selected_method_;
+      events.manual_centroids.clear();
       show_setup_ = false;
+      hard_reset_setup_ = false;
+    };
+
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+      begin_selection();
     }
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
       Vector2 mouse = GetMousePosition();
 
-      Rectangle minus_button = {screen_width_ / 2.0f - 90.0f,
-                                screen_height_ / 2.0f - 20.0f, 50.0f, 40.0f};
+      Rectangle minus_button = {screen_width_ / 2.0f - 180.0f, 180.0f, 50.0f,
+                                42.0f};
 
-      Rectangle plus_button = {screen_width_ / 2.0f + 40.0f,
-                               screen_height_ / 2.0f - 20.0f, 50.0f, 40.0f};
+      Rectangle plus_button = {screen_width_ / 2.0f + 130.0f, 180.0f, 50.0f,
+                               42.0f};
 
-      Rectangle start_button = {screen_width_ / 2.0f - 90.0f,
-                                screen_height_ / 2.0f + 50.0f, 180.0f, 42.0f};
+      const float card_width = 250.0f;
+      const float card_height = 150.0f;
+      const float card_gap = 20.0f;
+      const float cards_width = card_width * 3.0f + card_gap * 2.0f;
+      const float cards_x = (screen_width_ - cards_width) / 2.0f;
+      const float cards_y = 300.0f;
 
-      if (CheckCollisionPointRec(mouse, minus_button)) {
+      Rectangle random_card = {cards_x, cards_y, card_width, card_height};
+      Rectangle plus_card = {cards_x + card_width + card_gap, cards_y,
+                             card_width, card_height};
+      Rectangle manual_card = {cards_x + 2.0f * (card_width + card_gap),
+                               cards_y, card_width, card_height};
+
+      Rectangle start_button = {screen_width_ / 2.0f - 100.0f, 485.0f, 200.0f,
+                                44.0f};
+
+      if (CheckCollisionPointRec(mouse, menu_button)) {
+        events.main_menu = true;
+      } else if (hard_reset_setup_ &&
+                 CheckCollisionPointRec(
+                     mouse, {screen_width_ - 165.0f, screen_height_ - 55.0f,
+                             145.0f, 36.0f})) {
+        show_setup_ = false;
+        hard_reset_setup_ = false;
+      } else if (CheckCollisionPointRec(mouse, minus_button)) {
         selected_k_ = std::max(kMinK, selected_k_ - 1);
       } else if (CheckCollisionPointRec(mouse, plus_button)) {
         selected_k_ = std::min(kMaxK, selected_k_ + 1);
+      } else if (CheckCollisionPointRec(mouse, random_card)) {
+        selected_method_ = CentroidInitialization::Randomized;
+      } else if (CheckCollisionPointRec(mouse, plus_card)) {
+        selected_method_ = CentroidInitialization::KMeansPlusPlus;
+      } else if (CheckCollisionPointRec(mouse, manual_card)) {
+        selected_method_ = CentroidInitialization::Manual;
       } else if (CheckCollisionPointRec(mouse, start_button)) {
-        events.k_selected = true;
-        events.k = selected_k_;
-        show_setup_ = false;
+        begin_selection();
       }
     }
 
@@ -321,6 +543,12 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
 
   if (IsKeyPressed(KEY_R)) {
     events.toggle_running = true;
+  }
+
+  if (IsKeyPressed(KEY_LEFT_BRACKET)) {
+    events.speed_change = -1;
+  } else if (IsKeyPressed(KEY_RIGHT_BRACKET)) {
+    events.speed_change = 1;
   }
 
   if (IsKeyPressed(KEY_ESCAPE)) {
@@ -350,6 +578,16 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     Rectangle multi_run_button = {
         325.0f, static_cast<float>(screen_height_) - kBottomBarHeight + 12.0f,
         120.0f, 34.0f};
+    Rectangle menu_button = {
+        static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f, 34.0f};
+    Rectangle hard_reset_button = {
+        static_cast<float>(screen_width_) - 325.0f, 13.0f, 145.0f, 34.0f};
+    Rectangle slower_button = {
+        470.0f, static_cast<float>(screen_height_) - kBottomBarHeight + 12.0f,
+        36.0f, 34.0f};
+    Rectangle faster_button = {
+        512.0f, static_cast<float>(screen_height_) - kBottomBarHeight + 12.0f,
+        36.0f, 34.0f};
 
     if (CheckCollisionPointRec(mouse, step_button)) {
       events.step = true;
@@ -359,6 +597,14 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       events.reset = true;
     } else if (CheckCollisionPointRec(mouse, multi_run_button)) {
       show_multi_run_setup_ = true;
+    } else if (CheckCollisionPointRec(mouse, slower_button)) {
+      events.speed_change = -1;
+    } else if (CheckCollisionPointRec(mouse, faster_button)) {
+      events.speed_change = 1;
+    } else if (CheckCollisionPointRec(mouse, menu_button)) {
+      events.main_menu = true;
+    } else if (CheckCollisionPointRec(mouse, hard_reset_button)) {
+      events.hard_reset_requested = true;
     } else if (IsPointInsidePlot(mouse)) {
       Vector2 world = ScreenToWorld(mouse);
 
@@ -400,7 +646,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
 
 void Renderer::Render(const std::vector<Point>& points,
                       const std::vector<Centroid>& centroids, double total_cost,
-                      int iteration, bool converged) {
+                      int iteration, bool converged,
+                      double run_interval_seconds) {
   screen_width_ = GetScreenWidth();
   screen_height_ = GetScreenHeight();
 
@@ -423,6 +670,16 @@ void Renderer::Render(const std::vector<Point>& points,
 
   if (show_multi_run_setup_) {
     DrawMultiRunSetup();
+    EndDrawing();
+    return;
+  }
+
+  // ------------------------------------------------------------
+  // MANUAL CENTROID SETUP SCREEN
+  // ------------------------------------------------------------
+
+  if (show_manual_setup_) {
+    DrawManualSetup(points);
     EndDrawing();
     return;
   }
@@ -463,10 +720,14 @@ void Renderer::Render(const std::vector<Point>& points,
 
   DrawSidePanel(static_cast<int>(centroids.size()));
 
-  DrawPoints(points);
-  DrawCentroids(centroids);
+  Rectangle plot_clip = {
+      static_cast<float>(kLeftPanelWidth), static_cast<float>(kTopBarHeight),
+      static_cast<float>(screen_width_ - kLeftPanelWidth),
+      static_cast<float>(screen_height_ - kTopBarHeight - kBottomBarHeight)};
+  DrawPoints(points, plot_clip);
+  DrawCentroids(centroids, plot_clip);
 
-  DrawBottomBar();
+  DrawBottomBar(run_interval_seconds);
 
   if (show_help_) {
     DrawHelp();
@@ -500,10 +761,16 @@ void Renderer::DrawTopBar(int k, int iteration, double total_cost) const {
 
   DrawText(buffer, 470, 20, 20, kText);
 
-  DrawText("F1: Help", screen_width_ - 100, 21, 16, kMutedText);
+  DrawText("F1: Help", screen_width_ - 245, 21, 16, kMutedText);
+  DrawButton({static_cast<float>(screen_width_) - 325.0f, 13.0f, 145.0f,
+              34.0f},
+             "HARD RESET");
+  DrawButton({static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f,
+              34.0f},
+             "MAIN MENU");
 }
 
-void Renderer::DrawBottomBar() const {
+void Renderer::DrawBottomBar(double run_interval_seconds) const {
   int y = screen_height_ - kBottomBarHeight;
 
   DrawRectangle(0, y, screen_width_, kBottomBarHeight, kPanelDark);
@@ -515,18 +782,33 @@ void Renderer::DrawBottomBar() const {
              "RUN / STOP");
 
   DrawButton({225.0f, static_cast<float>(y) + 12.0f, 90.0f, kButtonHeight},
-             "RESET");
+             "SOFT RESET");
 
   DrawButton({325.0f, static_cast<float>(y) + 12.0f, 120.0f, kButtonHeight},
              "MULTI-RUN");
 
-  DrawText("SPACE: Step", 470, y + 20, 16, kMutedText);
+  DrawButton({470.0f, static_cast<float>(y) + 12.0f, 36.0f, kButtonHeight},
+             "-");
+  DrawButton({512.0f, static_cast<float>(y) + 12.0f, 36.0f, kButtonHeight},
+             "+");
 
-  DrawText("R: Run/Stop", 580, y + 20, 16, kMutedText);
+  char speed_text[32];
+  std::snprintf(speed_text, sizeof(speed_text), "%.2g s/step",
+                run_interval_seconds);
+  DrawText(speed_text, 556, y + 20, 15, kText);
 
-  DrawText("ESC: Reset", 695, y + 20, 16, kMutedText);
+  DrawText("SPACE: Step", 665, y + 12, 14, kMutedText);
+  DrawText("R: Run/Stop", 665, y + 31, 14, kMutedText);
 
-  DrawText("M: Multi-run", 805, y + 20, 16, kMutedText);
+  DrawText("ESC: Reset", 780, y + 12, 14, kMutedText);
+  DrawText("M: Multi-run", 780, y + 31, 14, kMutedText);
+
+  DrawText("Q: Quit", 900, y + 12, 14, kText);
+  DrawText("F1: Help", 900, y + 31, 14, kMutedText);
+
+  DrawText("Right click: add centroid in Manual mode", 985, y + 12, 14,
+           kMutedText);
+  DrawText("[ / ]: slower / faster", 985, y + 31, 14, kMutedText);
 }
 
 void Renderer::DrawSidePanel(int k) const {
@@ -577,26 +859,30 @@ void Renderer::DrawSidePanel(int k) const {
   DrawText("Wheel: Zoom", 18, y + 149, 13, kMutedText);
 }
 
-void Renderer::DrawPoints(const std::vector<Point>& points) const {
+void Renderer::DrawPoints(const std::vector<Point>& points,
+                          Rectangle clip) const {
+  BeginScissorMode(static_cast<int>(clip.x), static_cast<int>(clip.y),
+                   static_cast<int>(clip.width), static_cast<int>(clip.height));
   for (const Point& point : points) {
-    Vector2 screen_point = WorldToScreen(
-        {static_cast<float>(point.GetX()), static_cast<float>(point.GetY())});
-
-    if (screen_point.x < kLeftPanelWidth || screen_point.x > screen_width_ ||
-        screen_point.y < kTopBarHeight ||
-        screen_point.y > screen_height_ - kBottomBarHeight) {
-      continue;
-    }
+    Vector2 screen_point =
+        WorldToScreen({static_cast<float>(point.GetX()),
+                       static_cast<float>(point.GetY())},
+                      clip);
 
     DrawCircleV(screen_point, kPointRadius, GetPointColor(point.GetCentroid()));
   }
+  EndScissorMode();
 }
 
-void Renderer::DrawCentroids(const std::vector<Centroid>& centroids) const {
+void Renderer::DrawCentroids(const std::vector<Centroid>& centroids,
+                             Rectangle clip) const {
+  BeginScissorMode(static_cast<int>(clip.x), static_cast<int>(clip.y),
+                   static_cast<int>(clip.width), static_cast<int>(clip.height));
   for (std::size_t i = 0; i < centroids.size(); ++i) {
     Vector2 screen_point =
         WorldToScreen({static_cast<float>(centroids[i].GetX()),
-                       static_cast<float>(centroids[i].GetY())});
+                       static_cast<float>(centroids[i].GetY())},
+                      clip);
 
     Color color = GetCentroidColor(static_cast<int>(i));
 
@@ -608,6 +894,7 @@ void Renderer::DrawCentroids(const std::vector<Centroid>& centroids) const {
                {screen_point.x + kCentroidSize, screen_point.y - kCentroidSize},
                4.0f, color);
   }
+  EndScissorMode();
 }
 
 Color Renderer::GetPointColor(int centroid) const {
@@ -635,14 +922,18 @@ Color Renderer::GetCentroidColor(int centroid_index) const {
 }
 
 Vector2 Renderer::WorldToScreen(Vector2 point) const {
-  float plot_left = static_cast<float>(kLeftPanelWidth);
+  return WorldToScreen(
+      point,
+      {static_cast<float>(kLeftPanelWidth), static_cast<float>(kTopBarHeight),
+       static_cast<float>(screen_width_ - kLeftPanelWidth),
+       static_cast<float>(screen_height_ - kTopBarHeight - kBottomBarHeight)});
+}
 
-  float plot_top = static_cast<float>(kTopBarHeight);
-
-  float plot_width = static_cast<float>(screen_width_ - kLeftPanelWidth);
-
-  float plot_height =
-      static_cast<float>(screen_height_ - kTopBarHeight - kBottomBarHeight);
+Vector2 Renderer::WorldToScreen(Vector2 point, Rectangle plot) const {
+  float plot_left = plot.x;
+  float plot_top = plot.y;
+  float plot_width = plot.width;
+  float plot_height = plot.height;
 
   double world_range = world_max_ - world_min_;
 
@@ -657,7 +948,6 @@ Vector2 Renderer::WorldToScreen(Vector2 point) const {
       (static_cast<double>(point.y) - world_min_) / world_range);
 
   float x = plot_left + normalized_x * plot_width;
-
   float y = plot_top + (1.0f - normalized_y) * plot_height;
 
   x = plot_left + (x - plot_left) * zoom_ + pan_.x;
@@ -668,14 +958,18 @@ Vector2 Renderer::WorldToScreen(Vector2 point) const {
 }
 
 Vector2 Renderer::ScreenToWorld(Vector2 point) const {
-  float plot_left = static_cast<float>(kLeftPanelWidth);
+  return ScreenToWorld(
+      point,
+      {static_cast<float>(kLeftPanelWidth), static_cast<float>(kTopBarHeight),
+       static_cast<float>(screen_width_ - kLeftPanelWidth),
+       static_cast<float>(screen_height_ - kTopBarHeight - kBottomBarHeight)});
+}
 
-  float plot_top = static_cast<float>(kTopBarHeight);
-
-  float plot_width = static_cast<float>(screen_width_ - kLeftPanelWidth);
-
-  float plot_height =
-      static_cast<float>(screen_height_ - kTopBarHeight - kBottomBarHeight);
+Vector2 Renderer::ScreenToWorld(Vector2 point, Rectangle plot) const {
+  float plot_left = plot.x;
+  float plot_top = plot.y;
+  float plot_width = plot.width;
+  float plot_height = plot.height;
 
   double world_range = world_max_ - world_min_;
 
@@ -699,9 +993,16 @@ Vector2 Renderer::ScreenToWorld(Vector2 point) const {
 }
 
 bool Renderer::IsPointInsidePlot(Vector2 point) const {
-  return point.x >= kLeftPanelWidth && point.x <= screen_width_ &&
-         point.y >= kTopBarHeight &&
-         point.y <= screen_height_ - kBottomBarHeight;
+  return IsPointInsidePlot(
+      point,
+      {static_cast<float>(kLeftPanelWidth), static_cast<float>(kTopBarHeight),
+       static_cast<float>(screen_width_ - kLeftPanelWidth),
+       static_cast<float>(screen_height_ - kTopBarHeight - kBottomBarHeight)});
+}
+
+bool Renderer::IsPointInsidePlot(Vector2 point, Rectangle plot) const {
+  return point.x >= plot.x && point.x <= plot.x + plot.width &&
+         point.y >= plot.y && point.y <= plot.y + plot.height;
 }
 
 void Renderer::DrawButton(Rectangle rectangle, const char* text,
@@ -724,50 +1025,194 @@ void Renderer::DrawButton(Rectangle rectangle, const char* text,
 void Renderer::DrawSetup() const {
   DrawRectangle(0, 0, screen_width_, screen_height_, kBackground);
 
-  const char* title = "K-MEANS";
+  const char* title = hard_reset_setup_ ? "HARD RESET: CHANGE K / MODE"
+                                        : "K-MEANS SETUP";
+  int title_width = MeasureText(title, 38);
+  DrawText(title, (screen_width_ - title_width) / 2, 45, 38, kText);
+  DrawButton({static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f,
+              34.0f},
+             "MAIN MENU");
 
-  int title_width = MeasureText(title, 42);
+  const char* subtitle =
+      "Choose K and how the initial centroids should be selected";
+  int subtitle_width = MeasureText(subtitle, 18);
+  DrawText(subtitle, (screen_width_ - subtitle_width) / 2, 92, 18, kMutedText);
 
-  DrawText(title, (screen_width_ - title_width) / 2, screen_height_ / 2 - 150,
-           42, kText);
+  DrawText("NUMBER OF CLUSTERS (K)", 40, 150, 18, kText);
 
-  const char* subtitle = "Select number of clusters";
-
-  int subtitle_width = MeasureText(subtitle, 20);
-
-  DrawText(subtitle, (screen_width_ - subtitle_width) / 2,
-           screen_height_ / 2 - 90, 20, kMutedText);
-
-  Rectangle minus_button = {screen_width_ / 2.0f - 90.0f,
-                            screen_height_ / 2.0f - 20.0f, 50.0f, 40.0f};
-
-  Rectangle plus_button = {screen_width_ / 2.0f + 40.0f,
-                           screen_height_ / 2.0f - 20.0f, 50.0f, 40.0f};
+  Rectangle minus_button = {screen_width_ / 2.0f - 180.0f, 180.0f, 50.0f,
+                            42.0f};
+  Rectangle plus_button = {screen_width_ / 2.0f + 130.0f, 180.0f, 50.0f, 42.0f};
 
   DrawButton(minus_button, "-");
-
   DrawButton(plus_button, "+");
 
   char k_text[32];
-
   std::snprintf(k_text, sizeof(k_text), "%d", selected_k_);
+  int k_width = MeasureText(k_text, 34);
+  DrawText(k_text, (screen_width_ - k_width) / 2, 181, 34, kText);
 
-  int k_width = MeasureText(k_text, 32);
+  const float card_width = 250.0f;
+  const float card_height = 150.0f;
+  const float card_gap = 20.0f;
+  const float cards_width = card_width * 3.0f + card_gap * 2.0f;
+  const float cards_x = (screen_width_ - cards_width) / 2.0f;
+  const float cards_y = 300.0f;
 
-  DrawText(k_text, (screen_width_ - k_width) / 2, screen_height_ / 2 - 17, 32,
-           kText);
+  Rectangle cards[3] = {
+      {cards_x, cards_y, card_width, card_height},
+      {cards_x + card_width + card_gap, cards_y, card_width, card_height},
+      {cards_x + 2.0f * (card_width + card_gap), cards_y, card_width,
+       card_height}};
 
-  Rectangle start_button = {screen_width_ / 2.0f - 90.0f,
-                            screen_height_ / 2.0f + 50.0f, 180.0f, 42.0f};
+  const char* titles[3] = {"RANDOMIZED", "K-MEANS++", "MANUAL"};
 
-  DrawButton(start_button, "START");
+  const char* descriptions[3] = {"Choose initial centroids\nrandomly.",
+                                 "Uses placed points\non the first step.",
+                                 "Place each centroid\nwith right click."};
 
-  const char* hint = "Use +/- or Left/Right arrows, then Enter";
+  const char* shortcuts[3] = {"1", "2", "3"};
 
-  int hint_width = MeasureText(hint, 16);
+  for (int i = 0; i < 3; ++i) {
+    CentroidInitialization method = i == 0 ? CentroidInitialization::Randomized
+                                    : i == 1
+                                        ? CentroidInitialization::KMeansPlusPlus
+                                        : CentroidInitialization::Manual;
 
-  DrawText(hint, (screen_width_ - hint_width) / 2, screen_height_ / 2 + 115, 16,
+    bool selected = selected_method_ == method;
+
+    DrawButton(cards[i], titles[i], selected);
+
+    if (selected) {
+      DrawRectangleLinesEx(cards[i], 3.0f, kText);
+    }
+
+    DrawText(shortcuts[i], static_cast<int>(cards[i].x + 12),
+             static_cast<int>(cards[i].y + 12), 14, kMutedText);
+
+    int title_width_i = MeasureText(titles[i], 20);
+    DrawText(
+        titles[i],
+        static_cast<int>(cards[i].x + (cards[i].width - title_width_i) / 2),
+        static_cast<int>(cards[i].y + 42), 20, kText);
+
+    const char* line1 = descriptions[i];
+    const char* newline = std::strchr(line1, '\n');
+
+    if (newline != nullptr) {
+      std::string first(line1, newline);
+      std::string second(newline + 1);
+      int w1 = MeasureText(first.c_str(), 15);
+      int w2 = MeasureText(second.c_str(), 15);
+      DrawText(first.c_str(),
+               static_cast<int>(cards[i].x + (cards[i].width - w1) / 2),
+               static_cast<int>(cards[i].y + 78), 15, kMutedText);
+      DrawText(second.c_str(),
+               static_cast<int>(cards[i].x + (cards[i].width - w2) / 2),
+               static_cast<int>(cards[i].y + 99), 15, kMutedText);
+    }
+  }
+
+  Rectangle start_button = {screen_width_ / 2.0f - 100.0f, 485.0f, 200.0f,
+                            44.0f};
+
+  DrawButton(start_button, selected_method_ == CentroidInitialization::Manual
+                               ? "PLACE CENTROIDS"
+                               : "START");
+
+  if (hard_reset_setup_) {
+    DrawButton({static_cast<float>(screen_width_) - 165.0f,
+                static_cast<float>(screen_height_) - 55.0f, 145.0f, 36.0f},
+               "CANCEL");
+  }
+
+  DrawText(
+      "1 / 2 / 3: choose method    Left / Right: change K    Enter: continue",
+      40, screen_height_ - 48, 16, kMutedText);
+  DrawText("Q: Quit", screen_width_ - 90, screen_height_ - 48, 16, kText);
+}
+
+void Renderer::DrawManualSetup(const std::vector<Point>& points) const {
+  DrawRectangle(0, 0, screen_width_, screen_height_, kBackground);
+
+  DrawRectangle(0, 0, screen_width_, 70, kPanelDark);
+  DrawButton({static_cast<float>(screen_width_) - 165.0f, 18.0f, 145.0f,
+              34.0f},
+             "MAIN MENU");
+
+  char title[128];
+  std::snprintf(title, sizeof(title), "MANUAL CENTROIDS    %d / %d PLACED",
+                static_cast<int>(manual_centroids_.size()), selected_k_);
+
+  DrawText(title, 22, 18, 26, kText);
+  DrawText("Right click on the map to place a centroid", 22, 46, 14,
            kMutedText);
+
+  DrawRectangle(0, 70, kLeftPanelWidth, screen_height_ - 70, kPanel);
+  DrawRectangle(kLeftPanelWidth, 70, screen_width_ - kLeftPanelWidth,
+                screen_height_ - 70, kWhite);
+
+  DrawText("INSTRUCTIONS", 18, 95, 18, kText);
+
+  DrawText("Right click", 18, 135, 15, kText);
+  DrawText("Place centroid", 18, 157, 14, kMutedText);
+
+  DrawText("Z / Backspace", 18, 195, 15, kText);
+  DrawText("Undo last", 18, 217, 14, kMutedText);
+
+  DrawText("R", 18, 255, 15, kText);
+  DrawText("Clear all", 18, 277, 14, kMutedText);
+
+  DrawText("ESC", 18, 315, 15, kText);
+  DrawText("Back to setup", 18, 337, 14, kMutedText);
+
+  DrawText("Q", 18, 375, 15, kText);
+  DrawText("Quit application", 18, 397, 14, kMutedText);
+
+  // Existing data points.
+  Rectangle manual_plot = {
+      static_cast<float>(kLeftPanelWidth), 70.0f,
+      static_cast<float>(screen_width_ - kLeftPanelWidth),
+      static_cast<float>(screen_height_ - 70 - kBottomBarHeight)};
+  DrawPoints(points, manual_plot);
+
+  // Manual centroids are rendered as numbered crosses.
+  BeginScissorMode(static_cast<int>(manual_plot.x),
+                   static_cast<int>(manual_plot.y),
+                   static_cast<int>(manual_plot.width),
+                   static_cast<int>(manual_plot.height));
+  for (std::size_t i = 0; i < manual_centroids_.size(); ++i) {
+    Vector2 screen_point = WorldToScreen(manual_centroids_[i], manual_plot);
+    Color color = GetCentroidColor(static_cast<int>(i));
+
+    DrawCircleLinesV(screen_point, 15.0f, color);
+    DrawLineEx({screen_point.x - 10.0f, screen_point.y},
+               {screen_point.x + 10.0f, screen_point.y}, 4.0f, color);
+    DrawLineEx({screen_point.x, screen_point.y - 10.0f},
+               {screen_point.x, screen_point.y + 10.0f}, 4.0f, color);
+
+    char number[16];
+    std::snprintf(number, sizeof(number), "%d", static_cast<int>(i + 1));
+    DrawText(number, static_cast<int>(screen_point.x + 18),
+             static_cast<int>(screen_point.y - 9), 15, color);
+  }
+  EndScissorMode();
+
+  int footer_y = screen_height_ - 58;
+  DrawRectangle(0, footer_y, screen_width_, 58, kPanelDark);
+
+  bool ready = static_cast<int>(manual_centroids_.size()) == selected_k_;
+
+  Rectangle back_button = {20.0f, footer_y + 11.0f, 120.0f, 36.0f};
+  Rectangle menu_button = {155.0f, footer_y + 11.0f, 150.0f, 36.0f};
+  Rectangle start_button = {screen_width_ / 2.0f - 100.0f, footer_y + 8.0f,
+                            200.0f, 42.0f};
+
+  DrawButton(back_button, "BACK");
+  DrawButton(menu_button, "MAIN MENU");
+  DrawButton(start_button, ready ? "START" : "PLACE ALL", ready);
+
+  DrawText("Q: Quit", screen_width_ - 80, footer_y + 20, 14, kText);
 }
 
 void Renderer::SetMultiRunResults(const std::vector<double>& costs,
@@ -785,7 +1230,8 @@ void Renderer::SetMultiRunResults(const std::vector<double>& costs,
 
   screen_width_ = GetScreenWidth();
   screen_height_ = GetScreenHeight();
-  FitView(multi_run_points_, multi_run_centroids_);
+  zoom_ = 1.0f;
+  pan_ = {0.0f, 0.0f};
 }
 
 void Renderer::ClearMultiRunResults() {
@@ -796,6 +1242,32 @@ void Renderer::ClearMultiRunResults() {
   multi_run_centroids_.clear();
   multi_run_best_run_ = -1;
   multi_run_cost_scroll_ = 0;
+}
+
+void Renderer::BeginHardReset(int k, CentroidInitialization method) {
+  ClearMultiRunResults();
+  selected_k_ = std::max(kMinK, std::min(kMaxK, k));
+  selected_method_ = method;
+  manual_centroids_.clear();
+  show_setup_ = true;
+  show_manual_setup_ = false;
+  show_converged_map_ = false;
+  hard_reset_setup_ = true;
+}
+
+void Renderer::ShowMainMenu() {
+  ClearMultiRunResults();
+  show_setup_ = true;
+  show_manual_setup_ = false;
+  show_converged_map_ = false;
+  hard_reset_setup_ = false;
+  show_help_ = false;
+  filename_active_ = false;
+  selected_method_ = CentroidInitialization::Randomized;
+  selected_k_ = 2;
+  manual_centroids_.clear();
+  zoom_ = 1.0f;
+  pan_ = {0.0f, 0.0f};
 }
 
 void Renderer::DrawMultiRunSetup() const {
@@ -835,238 +1307,164 @@ void Renderer::DrawMultiRunSetup() const {
 
   DrawButton(start_button, "RUN EXPERIMENT");
   DrawButton(cancel_button, "CANCEL");
+  DrawButton({20.0f, static_cast<float>(screen_height_ - kBottomBarHeight + 11),
+              150.0f, 36.0f},
+             "MAIN MENU");
 
   const char* hint = "Use +/- or Left/Right arrows, then Enter";
   int hint_width = MeasureText(hint, 16);
   DrawText(hint, (screen_width_ - hint_width) / 2, screen_height_ - 45, 16,
            kMutedText);
 }
-void Renderer::DrawMultiRunResults() const {
-  // ------------------------------------------------------------
-  // BACKGROUND
-  // ------------------------------------------------------------
 
+void Renderer::DrawMultiRunResults() const {
   DrawRectangle(0, 0, screen_width_, screen_height_, kBackground);
 
-  // ------------------------------------------------------------
-  // HEADER
-  // ------------------------------------------------------------
-
   DrawRectangle(0, 0, screen_width_, 70, kPanelDark);
-
   DrawText("MULTI-RUN RESULTS", 25, 15, 28, kText);
 
-  char run_summary[128];
-
+  char run_summary[64];
   std::snprintf(run_summary, sizeof(run_summary), "%d RUNS",
                 static_cast<int>(multi_run_costs_.size()));
+  DrawText(run_summary, screen_width_ - 125, 21, 16, kMutedText);
 
-  DrawText(run_summary, screen_width_ - 150, 18, 18, kMutedText);
-
-  // ------------------------------------------------------------
-  // LAYOUT
-  // ------------------------------------------------------------
-
-  const int header_height = 70;
-  const int footer_height = 58;
-
-  const int content_top = header_height;
+  const int footer_height = kBottomBarHeight;
+  const int content_top = 70;
   const int content_bottom = screen_height_ - footer_height;
-
-  const int content_height = content_bottom - content_top;
-
   const int map_width = static_cast<int>(screen_width_ * 0.67f);
-
   const int panel_x = map_width;
   const int panel_width = screen_width_ - panel_x;
 
-  // ------------------------------------------------------------
-  // MAP PANEL
-  // ------------------------------------------------------------
+  DrawRectangle(0, content_top, map_width, content_bottom - content_top,
+                kWhite);
+  DrawRectangle(panel_x, content_top, panel_width, content_bottom - content_top,
+                kPanel);
 
-  DrawRectangle(0, content_top, map_width, content_height, kWhite);
-
-  // Map title.
   DrawText("BEST CLUSTERING", 20, content_top + 15, 20, kText);
 
-  // Subtitle.
   if (multi_run_best_run_ >= 0 &&
       multi_run_best_run_ < static_cast<int>(multi_run_costs_.size())) {
-    char best_run_text[128];
-
+    char best_run_text[64];
     std::snprintf(best_run_text, sizeof(best_run_text), "Solution from run %d",
                   multi_run_best_run_ + 1);
-
     DrawText(best_run_text, 20, content_top + 42, 15, kMutedText);
   }
 
-  // Separator below map heading.
   DrawLine(20, content_top + 68, map_width - 20, content_top + 68, kBorder);
 
-  // Draw the best solution.
-  DrawPoints(multi_run_points_);
-  DrawCentroids(multi_run_centroids_);
-
-  // ------------------------------------------------------------
-  // RESULTS / COST PANEL
-  // ------------------------------------------------------------
-
-  DrawRectangle(panel_x, content_top, panel_width, content_height, kPanel);
+  Rectangle map_clip = {
+      0.0f, static_cast<float>(content_top + 70), static_cast<float>(map_width),
+      static_cast<float>(content_bottom - content_top - 70)};
+  DrawPoints(multi_run_points_, map_clip);
+  DrawCentroids(multi_run_centroids_, map_clip);
 
   DrawText("RESULT SUMMARY", panel_x + 20, content_top + 15, 20, kText);
 
-  // ------------------------------------------------------------
-  // BEST RUN / BEST COST
-  // ------------------------------------------------------------
-
   double best_cost = 0.0;
-
   if (!multi_run_costs_.empty() && multi_run_best_run_ >= 0 &&
       multi_run_best_run_ < static_cast<int>(multi_run_costs_.size())) {
     best_cost = multi_run_costs_[multi_run_best_run_];
   }
 
-  // Best run box.
   Rectangle best_box = {static_cast<float>(panel_x + 15),
                         static_cast<float>(content_top + 52),
                         static_cast<float>(panel_width - 30), 90.0f};
 
   DrawRectangleRec(best_box, kWhite);
-
   DrawRectangleLinesEx(best_box, 1.0f, kBorder);
 
   DrawText("BEST RUN", static_cast<int>(best_box.x) + 15,
            static_cast<int>(best_box.y) + 12, 14, kMutedText);
 
-  char best_run_number[64];
-
+  char best_run_number[32];
   std::snprintf(best_run_number, sizeof(best_run_number), "Run %d",
                 multi_run_best_run_ + 1);
-
   DrawText(best_run_number, static_cast<int>(best_box.x) + 15,
-           static_cast<int>(best_box.y) + 34, 25, kText);
+           static_cast<int>(best_box.y) + 34, 24, kText);
 
-  char best_cost_text[128];
-
+  char best_cost_text[64];
   std::snprintf(best_cost_text, sizeof(best_cost_text), "Cost: %.6f",
                 best_cost);
-
-  DrawText(best_cost_text, static_cast<int>(best_box.x) + 100,
-           static_cast<int>(best_box.y) + 38, 16, kMutedText);
-
-  // ------------------------------------------------------------
-  // COST LIST
-  // ------------------------------------------------------------
+  DrawText(best_cost_text, static_cast<int>(best_box.x) + 105,
+           static_cast<int>(best_box.y) + 38, 15, kMutedText);
 
   const int costs_title_y = content_top + 160;
-
   DrawText("ALL RUN COSTS", panel_x + 20, costs_title_y, 18, kText);
 
-  // Column headings.
   const int table_x = panel_x + 20;
   const int table_y = costs_title_y + 35;
-
   DrawText("RUN", table_x, table_y, 14, kMutedText);
-
   DrawText("COST", table_x + 70, table_y, 14, kMutedText);
 
   DrawLine(table_x, table_y + 22, screen_width_ - 20, table_y + 22, kBorder);
 
   if (multi_run_costs_.empty()) {
     DrawText("No results available.", table_x, table_y + 40, 16, kMutedText);
-
   } else {
     const int row_height = 25;
-
     const int list_top = table_y + 32;
-
     const int list_bottom = content_bottom - 15;
-
     const int max_rows = std::max(1, (list_bottom - list_top) / row_height);
-
     const int total_runs = static_cast<int>(multi_run_costs_.size());
-
     const int max_scroll = std::max(0, total_runs - max_rows);
-
     const int first_run = std::min(multi_run_cost_scroll_, max_scroll);
-
     const int last_run = std::min(total_runs, first_run + max_rows);
 
     for (int i = first_run; i < last_run; ++i) {
       const bool is_best = (i == multi_run_best_run_);
-
       int row_y = list_top + (i - first_run) * row_height;
 
-      // Highlight best run.
       if (is_best) {
         Rectangle highlight = {static_cast<float>(table_x - 8),
                                static_cast<float>(row_y - 3),
                                static_cast<float>(panel_width - 25),
                                static_cast<float>(row_height)};
-
         DrawRectangleRec(highlight, kWhite);
-
         DrawRectangleLinesEx(highlight, 1.0f, kBorder);
       }
 
-      // Run number.
-      char run_text[32];
-
+      char run_text[16];
       std::snprintf(run_text, sizeof(run_text), "%d", i + 1);
-
       DrawText(run_text, table_x, row_y, 15, kText);
 
-      // Cost.
       char cost_text[64];
-
       std::snprintf(cost_text, sizeof(cost_text), "%.6f", multi_run_costs_[i]);
-
       DrawText(cost_text, table_x + 70, row_y, 15, kText);
 
-      // Best marker.
       if (is_best) {
-        DrawText("* BEST", screen_width_ - 85, row_y, 13, kText);
+        DrawText("* BEST", screen_width_ - 82, row_y, 13, kText);
       }
     }
 
-    // Scroll information.
     if (max_scroll > 0) {
       char scroll_text[64];
-
       std::snprintf(scroll_text, sizeof(scroll_text), "%d-%d of %d",
                     first_run + 1, last_run, total_runs);
-
       int scroll_width = MeasureText(scroll_text, 13);
-
       DrawText(scroll_text, screen_width_ - scroll_width - 20,
                content_bottom - 18, 13, kMutedText);
     }
   }
 
-  // ------------------------------------------------------------
-  // FOOTER
-  // ------------------------------------------------------------
-
   DrawRectangle(0, content_bottom, screen_width_, footer_height, kPanelDark);
 
-  // Main menu button.
   Rectangle menu_button = {20.0f, static_cast<float>(content_bottom + 11),
                            150.0f, 36.0f};
-
   DrawButton(menu_button, "MAIN MENU");
 
-  DrawText("M / ESC", 195, content_bottom + 14, 14, kText);
-
-  DrawText("Return to main menu", 195, content_bottom + 32, 13, kMutedText);
-
-  // Mouse-wheel hint.
-  DrawText("Mouse wheel: scroll costs", screen_width_ - 210,
-           content_bottom + 21, 13, kMutedText);
+  DrawText("M / ESC", 190, content_bottom + 13, 14, kText);
+  DrawText("Main menu", 190, content_bottom + 32, 13, kMutedText);
+  DrawText("Q: Quit", screen_width_ - 80, content_bottom + 21, 14, kText);
 }
 
 void Renderer::DrawConvergedScreen(const std::vector<Point>& points,
                                    const std::vector<Centroid>& centroids,
                                    double total_cost, int iteration) const {
+  if (show_converged_map_) {
+    DrawConvergedMap(points, centroids, total_cost, iteration);
+    return;
+  }
+
   DrawRectangle(0, 0, screen_width_, screen_height_, kBackground);
 
   // ------------------------------------------------------------
@@ -1142,25 +1540,78 @@ void Renderer::DrawConvergedScreen(const std::vector<Point>& points,
   // BUTTONS
   // ------------------------------------------------------------
 
-  Rectangle reset_button = {screen_width_ / 2.0f - 190.0f,
-                            screen_height_ / 2.0f + 90.0f, 160.0f, 45.0f};
+  const float button_y = screen_height_ / 2.0f + 90.0f;
+  Rectangle map_button = {screen_width_ / 2.0f - 270.0f, button_y, 160.0f,
+                          45.0f};
+  Rectangle reset_button = {screen_width_ / 2.0f - 80.0f, button_y, 160.0f,
+                            45.0f};
+  Rectangle menu_button = {screen_width_ / 2.0f + 110.0f, button_y, 160.0f,
+                           45.0f};
+  Rectangle hard_reset_button = {
+      screen_width_ / 2.0f + 300.0f, button_y, 160.0f, 45.0f};
 
-  Rectangle menu_button = {screen_width_ / 2.0f + 30.0f,
-                           screen_height_ / 2.0f + 90.0f, 160.0f, 45.0f};
-
+  DrawButton(map_button, "VIEW MAP");
   DrawButton(reset_button, "RESET");
-
   DrawButton(menu_button, "MAIN MENU");
+  DrawButton(hard_reset_button, "HARD RESET");
 
   // ------------------------------------------------------------
   // KEYBOARD HINTS
   // ------------------------------------------------------------
 
-  const char* hints = "R / Enter: Reset     M / Esc: Main Menu";
+  const char* hints =
+      "V: View map     R / Enter: Reset     M / Esc: Main Menu";
 
   int hints_width = MeasureText(hints, 16);
 
   DrawText(hints, (screen_width_ - hints_width) / 2, screen_height_ - 55, 16,
+           kMutedText);
+}
+
+void Renderer::DrawConvergedMap(const std::vector<Point>& points,
+                                const std::vector<Centroid>& centroids,
+                                double total_cost, int iteration) const {
+  DrawRectangle(0, 0, screen_width_, screen_height_, kBackground);
+  DrawRectangle(0, 0, screen_width_, kTopBarHeight, kPanelDark);
+  DrawText("FINAL CLUSTERING MAP", 22, 17, 26, kText);
+
+  DrawRectangle(0, kTopBarHeight, kLeftPanelWidth,
+                screen_height_ - kTopBarHeight - kBottomBarHeight, kPanel);
+  DrawRectangle(kLeftPanelWidth, kTopBarHeight,
+                screen_width_ - kLeftPanelWidth,
+                screen_height_ - kTopBarHeight - kBottomBarHeight, kWhite);
+
+  DrawText("SUMMARY", 18, kTopBarHeight + 18, 18, kText);
+  char buffer[128];
+  std::snprintf(buffer, sizeof(buffer), "Points: %d",
+                static_cast<int>(points.size()));
+  DrawText(buffer, 18, kTopBarHeight + 55, 14, kMutedText);
+  std::snprintf(buffer, sizeof(buffer), "Clusters: %d",
+                static_cast<int>(centroids.size()));
+  DrawText(buffer, 18, kTopBarHeight + 80, 14, kMutedText);
+  std::snprintf(buffer, sizeof(buffer), "Iterations: %d", iteration);
+  DrawText(buffer, 18, kTopBarHeight + 105, 14, kMutedText);
+  std::snprintf(buffer, sizeof(buffer), "Cost: %.4f", total_cost);
+  DrawText(buffer, 18, kTopBarHeight + 130, 14, kMutedText);
+  DrawText("Middle mouse: pan", 18, kTopBarHeight + 175, 13, kMutedText);
+  DrawText("Wheel: zoom", 18, kTopBarHeight + 195, 13, kMutedText);
+
+  Rectangle plot_clip = {
+      static_cast<float>(kLeftPanelWidth), static_cast<float>(kTopBarHeight),
+      static_cast<float>(screen_width_ - kLeftPanelWidth),
+      static_cast<float>(screen_height_ - kTopBarHeight - kBottomBarHeight)};
+  DrawPoints(points, plot_clip);
+  DrawCentroids(centroids, plot_clip);
+
+  const int footer_y = screen_height_ - kBottomBarHeight;
+  DrawRectangle(0, footer_y, screen_width_, kBottomBarHeight, kPanelDark);
+  const float button_y = static_cast<float>(footer_y + 11);
+  DrawButton({20.0f, button_y, 140.0f, 36.0f}, "SUMMARY");
+  DrawButton({170.0f, button_y, 100.0f, 36.0f}, "RESET");
+  DrawButton({280.0f, button_y, 150.0f, 36.0f}, "MAIN MENU");
+  DrawButton({440.0f, button_y, 150.0f, 36.0f}, "HARD RESET");
+  DrawText("V: Summary", 455, footer_y + 13, 14, kText);
+  DrawText("R / Enter: Reset  |  M / Esc: Main Menu", 455, footer_y + 32, 13,
            kMutedText);
 }
 
@@ -1222,6 +1673,13 @@ void Renderer::DrawHelp() const {
   DrawText("Mouse wheel", static_cast<int>(panel_x + 25), y, 16, kText);
 
   DrawText("Zoom", static_cast<int>(panel_x + 130), y, 16, kMutedText);
+
+  y += 27;
+
+  DrawText("Q", static_cast<int>(panel_x + 25), y, 16, kText);
+
+  DrawText("Quit application", static_cast<int>(panel_x + 130), y, 16,
+           kMutedText);
 
   y += 40;
 

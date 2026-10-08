@@ -39,8 +39,14 @@ class Simulator {
   Renderer renderer_;
   int iteration_;
   bool running_;
+  double run_interval_seconds_;
+  double run_elapsed_seconds_;
   int k_;
   bool converged_;
+  Renderer::CentroidInitialization centroid_mode_;
+  std::vector<Vector2> manual_centroids_;
+  std::vector<Centroid> initial_centroids_;
+  bool deferred_kmeans_plus_plus_;
 
   double SquaredEuclidianDistance(const double x1, const double y1,
                                   const double x2, const double y2) const;
