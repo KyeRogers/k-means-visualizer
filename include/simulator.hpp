@@ -27,6 +27,7 @@ class Simulator {
 
   void KMeansIteration();
   void Run();
+  void RunMultiple(const int total);
 
   void Reset(const bool complete_reset);
   void LoadFromFile(const std::string& filename);

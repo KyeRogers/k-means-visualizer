@@ -29,6 +29,10 @@ class Renderer {
 
     bool reset = false;
     bool main_menu = false;
+
+    // Multi-run mode.
+    bool multi_run_requested = false;
+    int total_runs = 10;
   };
 
   /**
@@ -39,38 +43,36 @@ class Renderer {
    */
   void Initialize(double world_min, double world_max);
 
-  /**
-   * Checks whether the renderer should close.
-   *
-   * @return True if the window should close.
-   */
   bool ShouldClose() const;
 
-  /**
-   * Polls keyboard and mouse input.
-   *
-   * @param converged Whether the simulation has converged.
-   *
-   * @return Input events generated during this frame.
-   */
   InputEvents PollInput(bool converged);
 
-  /**
-   * Renders the current simulation state.
-   *
-   * @param points Points belonging to the simulation.
-   * @param centroids Centroids belonging to the simulation.
-   * @param total_cost Current total cost.
-   * @param iteration Current iteration number.
-   * @param converged Whether the simulation has converged.
-   */
   void Render(const std::vector<Point>& points,
               const std::vector<Centroid>& centroids, double total_cost,
               int iteration, bool converged);
 
   /**
-   * Closes the renderer.
+   * Supplies the result of a multi-run experiment.
+   *
+   * The renderer copies the costs and the best solution so it can display
+   * the complete cost vector and the final/best clustering.
+   *
+   * @param costs Cost produced by each run.
+   * @param best_points Points belonging to the best run.
+   * @param best_centroids Centroids belonging to the best run.
+   * @param best_run Zero-based index of the best run.
    */
+  void SetMultiRunResults(const std::vector<double>& costs,
+                          const std::vector<Point>& best_points,
+                          const std::vector<Centroid>& best_centroids,
+                          int best_run);
+
+  /**
+   * Returns the renderer to the normal simulation state and clears the
+   * previous multi-run result.
+   */
+  void ClearMultiRunResults();
+
   void Close();
 
  private:
@@ -88,6 +90,10 @@ class Renderer {
   static constexpr int kMinK = 1;
   static constexpr int kMaxK = kColorCount - 1;
 
+  static constexpr int kMinRuns = 1;
+  static constexpr int kMaxRuns = 1000;
+  static constexpr int kDefaultRuns = 10;
+
   static constexpr float kPointRadius = 5.0f;
   static constexpr float kCentroidSize = 11.0f;
 
@@ -99,6 +105,9 @@ class Renderer {
   void DrawSidePanel(int k) const;
   void DrawHelp() const;
   void DrawSetup() const;
+
+  void DrawMultiRunSetup() const;
+  void DrawMultiRunResults() const;
 
   void DrawConvergedScreen(const std::vector<Point>& points,
                            const std::vector<Centroid>& centroids,
@@ -125,6 +134,16 @@ class Renderer {
   bool filename_active_ = false;
   bool show_help_ = false;
   bool show_setup_ = true;
+
+  bool show_multi_run_setup_ = false;
+  bool show_multi_run_results_ = false;
+  int selected_runs_ = kDefaultRuns;
+
+  std::vector<double> multi_run_costs_;
+  std::vector<Point> multi_run_points_;
+  std::vector<Centroid> multi_run_centroids_;
+  int multi_run_best_run_ = -1;
+  int multi_run_cost_scroll_ = 0;
 
   int selected_k_ = 2;
 

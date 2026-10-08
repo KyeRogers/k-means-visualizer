@@ -1,8 +1,8 @@
 #include "simulator.hpp"
 
 #include <fstream>
-#include <random>
 #include <iostream>
+#include <random>
 #include <sstream>
 
 void CentroidCache::Update(const double x, const double y) {
@@ -71,6 +71,10 @@ void Simulator::Run() {
       iteration_ = 0;
     }
 
+    if (events.multi_run_requested) {
+      RunMultiple(events.total_runs);
+    }
+
     if (events.main_menu) {
       renderer_.Initialize(kWorldMin, kWorldMax);
       Reset(true);
@@ -98,7 +102,8 @@ void Simulator::Run() {
     }
 
     // 4. Render the NEW state
-    renderer_.Render(points_, centroids_, current_cost_, iteration_, converged_);
+    renderer_.Render(points_, centroids_, current_cost_, iteration_,
+                     converged_);
   }
 }
 /** @brief returns true if succeded, false if converged  */
@@ -129,7 +134,33 @@ void Simulator::KMeansIteration() {
   if (changed == false) {
     converged_ = true;
   }
+}
 
+void Simulator::RunMultiple(const int total) {
+  // storage cache
+  std::vector<double> costs(total);
+  double min_cost{__DBL_MAX__};
+  int best_idx{0};
+  std::vector<Point> best_points;
+  std::vector<Centroid> best_centroids;
+  // loop total times
+  for (int i{0}; i < total; i++) {
+    Reset(false);
+    while (!converged_) {
+      KMeansIteration();
+    }
+    if (current_cost_ < min_cost) {
+      min_cost = current_cost_;
+      best_idx = i;
+      // copy the best_points
+      best_points = points_;
+      best_centroids = centroids_;
+    }
+    costs[i] = current_cost_;
+  }
+
+  // render
+  renderer_.SetMultiRunResults(costs, best_points, best_centroids, best_idx);
 }
 
 /** @brief returns the squared euclidian distance between two points*/
