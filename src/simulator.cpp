@@ -27,7 +27,8 @@ Simulator::Simulator()
       k_{0},
       converged_{false},
       centroid_mode_{Renderer::CentroidInitialization::Randomized},
-      deferred_kmeans_plus_plus_{false} {};
+      deferred_kmeans_plus_plus_{false},
+      seed_{42} {};
 
 void Simulator::Reset(const bool complete_reset) {
   if (!complete_reset) {
@@ -251,7 +252,7 @@ double Simulator::ClosestCentroid(Point& point) {
 
 double Simulator::GenerateRandomDouble() {
   std::random_device rd;
-  std::mt19937 gen(rd());
+  std::mt19937 gen(seed_);
   std::uniform_real_distribution<double> dist(kWorldMin, kWorldMax);
   return dist(gen);
 }

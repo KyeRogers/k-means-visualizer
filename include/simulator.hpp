@@ -47,6 +47,7 @@ class Simulator {
   std::vector<Vector2> manual_centroids_;
   std::vector<Centroid> initial_centroids_;
   bool deferred_kmeans_plus_plus_;
+  int seed_;
 
   double SquaredEuclidianDistance(const double x1, const double y1,
                                   const double x2, const double y2) const;
