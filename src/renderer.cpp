@@ -1,10 +1,13 @@
 #include "renderer.hpp"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <string>
 
 namespace {
 
@@ -56,6 +59,10 @@ void Renderer::Initialize(double world_min, double world_max) {
   show_setup_ = true;
 
   selected_k_ = 2;
+  seed_input_active_ = false;
+  seed_input_ = std::to_string(selected_seed_);
+  empty_centroid_indices_.clear();
+  empty_centroid_iteration_ = -1;
   selected_runs_ = kDefaultRuns;
   show_multi_run_setup_ = false;
   show_multi_run_results_ = false;
@@ -90,10 +97,9 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     int character = GetCharPressed();
 
     while (character > 0) {
-      if (character >= 32 && character <= 126) {
+      if (filename_active_ && character >= 32 && character <= 126) {
         filename_input_ += static_cast<char>(character);
       }
-
       character = GetCharPressed();
     }
 
@@ -116,13 +122,20 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
       Vector2 mouse = GetMousePosition();
-
-      Rectangle filename_box = {
-          25.0f, 315.0f, static_cast<float>(screen_width_) - 50.0f, 38.0f};
-
-      if (CheckCollisionPointRec(mouse, filename_box)) {
-        filename_active_ = true;
-      }
+      const float panel_width =
+          std::min(680.0f, static_cast<float>(screen_width_) - 40.0f);
+      const float panel_height =
+          std::min(590.0f, static_cast<float>(screen_height_) - 30.0f);
+      const float panel_x = (screen_width_ - panel_width) / 2.0f;
+      const float panel_y = (screen_height_ - panel_height) / 2.0f;
+      // Keep the hit target aligned with the filename field drawn by
+      // DrawHelp(). DrawHelp places the field after the 12 help rows and the
+      // section heading.
+      const float filename_y =
+          panel_y + 58.0f + 12.0f * 23.0f + 7.0f + 13.0f + 25.0f;
+      Rectangle filename_box = {panel_x + 22.0f, filename_y,
+                                panel_width - 44.0f, 36.0f};
+      filename_active_ = CheckCollisionPointRec(mouse, filename_box);
     }
 
     return events;
@@ -293,8 +306,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
       Vector2 mouse = GetMousePosition();
-      Rectangle top_menu_button = {
-          static_cast<float>(screen_width_) - 165.0f, 18.0f, 145.0f, 34.0f};
+      Rectangle top_menu_button = {static_cast<float>(screen_width_) - 165.0f,
+                                   18.0f, 145.0f, 34.0f};
       Rectangle start_button = {
           static_cast<float>(screen_width_) / 2.0f - 100.0f,
           static_cast<float>(screen_height_) - 100.0f, 200.0f, 42.0f};
@@ -375,14 +388,14 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
         }
       } else {
         const float button_y = screen_height_ / 2.0f + 90.0f;
-        Rectangle map_button = {screen_width_ / 2.0f - 270.0f, button_y,
-                                160.0f, 45.0f};
+        Rectangle map_button = {screen_width_ / 2.0f - 270.0f, button_y, 160.0f,
+                                45.0f};
         Rectangle reset_button = {screen_width_ / 2.0f - 80.0f, button_y,
                                   160.0f, 45.0f};
         Rectangle menu_button = {screen_width_ / 2.0f + 110.0f, button_y,
                                  160.0f, 45.0f};
-        Rectangle hard_reset_button = {
-            screen_width_ / 2.0f + 300.0f, button_y, 160.0f, 45.0f};
+        Rectangle hard_reset_button = {screen_width_ / 2.0f + 300.0f, button_y,
+                                       160.0f, 45.0f};
 
         if (CheckCollisionPointRec(mouse, map_button)) {
           show_converged_map_ = true;
@@ -407,8 +420,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       if (wheel != 0.0f) {
         Vector2 mouse = GetMousePosition();
         Vector2 before_zoom = ScreenToWorld(mouse);
-        zoom_ = ClampFloat(zoom_ * (wheel > 0.0f ? 1.1f : 1.0f / 1.1f),
-                           0.1f, 20.0f);
+        zoom_ = ClampFloat(zoom_ * (wheel > 0.0f ? 1.1f : 1.0f / 1.1f), 0.1f,
+                           20.0f);
         Vector2 after_zoom = WorldToScreen(before_zoom);
         pan_.x += mouse.x - after_zoom.x;
         pan_.y += mouse.y - after_zoom.y;
@@ -423,23 +436,56 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
   // ------------------------------------------------------------
 
   if (show_setup_) {
-    Rectangle menu_button = {
-        static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f, 34.0f};
+    Rectangle menu_button = {static_cast<float>(screen_width_) - 165.0f, 13.0f,
+                             145.0f, 34.0f};
     if (hard_reset_setup_ && IsKeyPressed(KEY_ESCAPE)) {
       show_setup_ = false;
       hard_reset_setup_ = false;
       return events;
     }
-    if (IsKeyPressed(KEY_M)) {
+    if (IsKeyPressed(KEY_M) && !hard_reset_setup_) {
       events.main_menu = true;
       return events;
     }
 
+    // Seed input is deliberately committed on Enter (or when the user
+    // clicks Randomize), so editing the field never changes a running run.
+    bool seed_commit_pressed = false;
+    if (seed_input_active_) {
+      int character = GetCharPressed();
+      while (character > 0) {
+        if ((character >= '0' && character <= '9') ||
+            (character == '-' && seed_input_.empty())) {
+          if (seed_input_.size() < 11)
+            seed_input_ += static_cast<char>(character);
+        }
+        character = GetCharPressed();
+      }
+      if (IsKeyPressed(KEY_BACKSPACE) && !seed_input_.empty()) {
+        seed_input_.pop_back();
+      }
+      if (IsKeyPressed(KEY_ENTER)) {
+        seed_commit_pressed = true;
+        char* end = nullptr;
+        long parsed = std::strtol(seed_input_.c_str(), &end, 10);
+        if (end != seed_input_.c_str() && *end == '\0' && parsed >= INT_MIN &&
+            parsed <= INT_MAX) {
+          selected_seed_ = static_cast<int>(parsed);
+          events.seed_changed = true;
+          events.seed = selected_seed_;
+        }
+        seed_input_ = std::to_string(selected_seed_);
+        seed_input_active_ = false;
+      }
+    }
+
     if (IsKeyPressed(KEY_LEFT) || IsKeyPressed(KEY_A)) {
+      seed_input_active_ = false;
       selected_k_ = std::max(kMinK, selected_k_ - 1);
     }
 
     if (IsKeyPressed(KEY_RIGHT) || IsKeyPressed(KEY_D)) {
+      seed_input_active_ = false;
       selected_k_ = std::min(kMaxK, selected_k_ + 1);
     }
 
@@ -469,12 +515,39 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       hard_reset_setup_ = false;
     };
 
-    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) {
+    if (!seed_commit_pressed &&
+        (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE))) {
       begin_selection();
     }
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
       Vector2 mouse = GetMousePosition();
+
+      if (CheckCollisionPointRec(mouse, menu_button)) {
+        if (hard_reset_setup_) {
+          show_setup_ = false;
+          hard_reset_setup_ = false;
+        } else {
+          events.main_menu = true;
+        }
+        return events;
+      }
+
+      Rectangle seed_box = {screen_width_ / 2.0f - 170.0f, 244.0f, 220.0f,
+                            38.0f};
+      Rectangle random_seed_button = {screen_width_ / 2.0f + 60.0f, 244.0f,
+                                      150.0f, 38.0f};
+      if (CheckCollisionPointRec(mouse, seed_box)) {
+        seed_input_active_ = true;
+      } else if (CheckCollisionPointRec(mouse, random_seed_button)) {
+        selected_seed_ = GetRandomValue(-1000000000, 1000000000);
+        seed_input_ = std::to_string(selected_seed_);
+        seed_input_active_ = false;
+        events.seed_changed = true;
+        events.seed = selected_seed_;
+      } else {
+        seed_input_active_ = false;
+      }
 
       Rectangle minus_button = {screen_width_ / 2.0f - 180.0f, 180.0f, 50.0f,
                                 42.0f};
@@ -578,10 +651,10 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     Rectangle multi_run_button = {
         325.0f, static_cast<float>(screen_height_) - kBottomBarHeight + 12.0f,
         120.0f, 34.0f};
-    Rectangle menu_button = {
-        static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f, 34.0f};
-    Rectangle hard_reset_button = {
-        static_cast<float>(screen_width_) - 325.0f, 13.0f, 145.0f, 34.0f};
+    Rectangle menu_button = {static_cast<float>(screen_width_) - 165.0f, 13.0f,
+                             145.0f, 34.0f};
+    Rectangle hard_reset_button = {static_cast<float>(screen_width_) - 325.0f,
+                                   13.0f, 145.0f, 34.0f};
     Rectangle slower_button = {
         470.0f, static_cast<float>(screen_height_) - kBottomBarHeight + 12.0f,
         36.0f, 34.0f};
@@ -710,7 +783,8 @@ void Renderer::Render(const std::vector<Point>& points,
   // NORMAL SIMULATION SCREEN
   // ------------------------------------------------------------
 
-  DrawTopBar(static_cast<int>(centroids.size()), iteration, total_cost);
+  DrawTopBar(static_cast<int>(centroids.size()), iteration, total_cost,
+             selected_seed_);
 
   DrawRectangle(0, kTopBarHeight, kLeftPanelWidth,
                 screen_height_ - kTopBarHeight - kBottomBarHeight, kPanel);
@@ -728,6 +802,7 @@ void Renderer::Render(const std::vector<Point>& points,
   DrawCentroids(centroids, plot_clip);
 
   DrawBottomBar(run_interval_seconds);
+  DrawEmptyCentroidNotice();
 
   if (show_help_) {
     DrawHelp();
@@ -742,7 +817,8 @@ void Renderer::Close() {
   }
 }
 
-void Renderer::DrawTopBar(int k, int iteration, double total_cost) const {
+void Renderer::DrawTopBar(int k, int iteration, double total_cost,
+                          int seed) const {
   DrawRectangle(0, 0, screen_width_, kTopBarHeight, kPanelDark);
 
   DrawText("K-MEANS", 18, 17, 24, kText);
@@ -761,12 +837,13 @@ void Renderer::DrawTopBar(int k, int iteration, double total_cost) const {
 
   DrawText(buffer, 470, 20, 20, kText);
 
+  std::snprintf(buffer, sizeof(buffer), "Seed: %d", seed);
+  DrawText(buffer, 650, 20, 18, kText);
+
   DrawText("F1: Help", screen_width_ - 245, 21, 16, kMutedText);
-  DrawButton({static_cast<float>(screen_width_) - 325.0f, 13.0f, 145.0f,
-              34.0f},
+  DrawButton({static_cast<float>(screen_width_) - 325.0f, 13.0f, 145.0f, 34.0f},
              "HARD RESET");
-  DrawButton({static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f,
-              34.0f},
+  DrawButton({static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f, 34.0f},
              "MAIN MENU");
 }
 
@@ -864,10 +941,9 @@ void Renderer::DrawPoints(const std::vector<Point>& points,
   BeginScissorMode(static_cast<int>(clip.x), static_cast<int>(clip.y),
                    static_cast<int>(clip.width), static_cast<int>(clip.height));
   for (const Point& point : points) {
-    Vector2 screen_point =
-        WorldToScreen({static_cast<float>(point.GetX()),
-                       static_cast<float>(point.GetY())},
-                      clip);
+    Vector2 screen_point = WorldToScreen(
+        {static_cast<float>(point.GetX()), static_cast<float>(point.GetY())},
+        clip);
 
     DrawCircleV(screen_point, kPointRadius, GetPointColor(point.GetCentroid()));
   }
@@ -1025,13 +1101,12 @@ void Renderer::DrawButton(Rectangle rectangle, const char* text,
 void Renderer::DrawSetup() const {
   DrawRectangle(0, 0, screen_width_, screen_height_, kBackground);
 
-  const char* title = hard_reset_setup_ ? "HARD RESET: CHANGE K / MODE"
-                                        : "K-MEANS SETUP";
+  const char* title =
+      hard_reset_setup_ ? "HARD RESET: CHANGE K / MODE" : "K-MEANS SETUP";
   int title_width = MeasureText(title, 38);
   DrawText(title, (screen_width_ - title_width) / 2, 45, 38, kText);
-  DrawButton({static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f,
-              34.0f},
-             "MAIN MENU");
+  DrawButton({static_cast<float>(screen_width_) - 165.0f, 13.0f, 145.0f, 34.0f},
+             hard_reset_setup_ ? "CANCEL" : "MAIN MENU");
 
   const char* subtitle =
       "Choose K and how the initial centroids should be selected";
@@ -1051,6 +1126,19 @@ void Renderer::DrawSetup() const {
   std::snprintf(k_text, sizeof(k_text), "%d", selected_k_);
   int k_width = MeasureText(k_text, 34);
   DrawText(k_text, (screen_width_ - k_width) / 2, 181, 34, kText);
+
+  DrawText("RANDOM SEED", static_cast<int>(screen_width_ / 2.0f - 170.0f), 220,
+           14, kMutedText);
+  Rectangle seed_box = {screen_width_ / 2.0f - 170.0f, 244.0f, 220.0f, 38.0f};
+  DrawRectangleRec(seed_box, kWhite);
+  DrawRectangleLinesEx(seed_box, 1.0f, seed_input_active_ ? kText : kBorder);
+  const char* seed_text =
+      seed_input_.empty() ? "Type integer seed" : seed_input_.c_str();
+  DrawText(seed_text, static_cast<int>(seed_box.x + 10),
+           static_cast<int>(seed_box.y + 10), 16,
+           seed_input_.empty() ? kMutedText : kText);
+  DrawButton({screen_width_ / 2.0f + 60.0f, 244.0f, 150.0f, 38.0f},
+             "RANDOMIZE SEED");
 
   const float card_width = 250.0f;
   const float card_height = 150.0f;
@@ -1120,15 +1208,10 @@ void Renderer::DrawSetup() const {
                                ? "PLACE CENTROIDS"
                                : "START");
 
-  if (hard_reset_setup_) {
-    DrawButton({static_cast<float>(screen_width_) - 165.0f,
-                static_cast<float>(screen_height_) - 55.0f, 145.0f, 36.0f},
-               "CANCEL");
-  }
-
-  DrawText(
-      "1 / 2 / 3: choose method    Left / Right: change K    Enter: continue",
-      40, screen_height_ - 48, 16, kMutedText);
+  // Keep footer instructions away from the quit label. The hard-reset cancel
+  // action is in the top-right button, so it cannot overlap the footer either.
+  DrawText("Seed: click to edit; Enter applies.  1/2/3: mode; Enter: continue",
+           40, screen_height_ - 48, 14, kMutedText);
   DrawText("Q: Quit", screen_width_ - 90, screen_height_ - 48, 16, kText);
 }
 
@@ -1136,8 +1219,7 @@ void Renderer::DrawManualSetup(const std::vector<Point>& points) const {
   DrawRectangle(0, 0, screen_width_, screen_height_, kBackground);
 
   DrawRectangle(0, 0, screen_width_, 70, kPanelDark);
-  DrawButton({static_cast<float>(screen_width_) - 165.0f, 18.0f, 145.0f,
-              34.0f},
+  DrawButton({static_cast<float>(screen_width_) - 165.0f, 18.0f, 145.0f, 34.0f},
              "MAIN MENU");
 
   char title[128];
@@ -1213,6 +1295,39 @@ void Renderer::DrawManualSetup(const std::vector<Point>& points) const {
   DrawButton(start_button, ready ? "START" : "PLACE ALL", ready);
 
   DrawText("Q: Quit", screen_width_ - 80, footer_y + 20, 14, kText);
+}
+
+void Renderer::SetSeed(int seed) {
+  selected_seed_ = seed;
+  seed_input_ = std::to_string(seed);
+}
+
+void Renderer::SetEmptyCentroidNotifications(const std::vector<int>& indices,
+                                             int iteration) {
+  empty_centroid_indices_ = indices;
+  empty_centroid_iteration_ = indices.empty() ? -1 : iteration;
+}
+
+void Renderer::DrawEmptyCentroidNotice() const {
+  if (empty_centroid_indices_.empty()) return;
+  char message[256];
+  std::string list;
+  for (std::size_t i = 0; i < empty_centroid_indices_.size(); ++i) {
+    if (i) list += ", ";
+    list += std::to_string(empty_centroid_indices_[i]);
+  }
+  std::snprintf(message, sizeof(message), "Empty centroids reinitialized: %s",
+                list.c_str());
+  int width = MeasureText(message, 16) + 28;
+  Rectangle box = {
+      static_cast<float>(kLeftPanelWidth + 16),
+      static_cast<float>(kTopBarHeight + 14),
+      static_cast<float>(std::min(width, screen_width_ - kLeftPanelWidth - 32)),
+      36.0f};
+  DrawRectangleRec(box, {255, 247, 220, 245});
+  DrawRectangleLinesEx(box, 1.0f, {220, 180, 90, 255});
+  DrawText(message, static_cast<int>(box.x + 12), static_cast<int>(box.y + 10),
+           16, kText);
 }
 
 void Renderer::SetMultiRunResults(const std::vector<double>& costs,
@@ -1352,9 +1467,9 @@ void Renderer::DrawMultiRunResults() const {
 
   DrawLine(20, content_top + 68, map_width - 20, content_top + 68, kBorder);
 
-  Rectangle map_clip = {
-      0.0f, static_cast<float>(content_top + 70), static_cast<float>(map_width),
-      static_cast<float>(content_bottom - content_top - 70)};
+  Rectangle map_clip = {0.0f, static_cast<float>(content_top + 70),
+                        static_cast<float>(map_width),
+                        static_cast<float>(content_bottom - content_top - 70)};
   DrawPoints(multi_run_points_, map_clip);
   DrawCentroids(multi_run_centroids_, map_clip);
 
@@ -1547,8 +1662,8 @@ void Renderer::DrawConvergedScreen(const std::vector<Point>& points,
                             45.0f};
   Rectangle menu_button = {screen_width_ / 2.0f + 110.0f, button_y, 160.0f,
                            45.0f};
-  Rectangle hard_reset_button = {
-      screen_width_ / 2.0f + 300.0f, button_y, 160.0f, 45.0f};
+  Rectangle hard_reset_button = {screen_width_ / 2.0f + 300.0f, button_y,
+                                 160.0f, 45.0f};
 
   DrawButton(map_button, "VIEW MAP");
   DrawButton(reset_button, "RESET");
@@ -1559,8 +1674,7 @@ void Renderer::DrawConvergedScreen(const std::vector<Point>& points,
   // KEYBOARD HINTS
   // ------------------------------------------------------------
 
-  const char* hints =
-      "V: View map     R / Enter: Reset     M / Esc: Main Menu";
+  const char* hints = "V: View map     R / Enter: Reset     M / Esc: Main Menu";
 
   int hints_width = MeasureText(hints, 16);
 
@@ -1577,8 +1691,7 @@ void Renderer::DrawConvergedMap(const std::vector<Point>& points,
 
   DrawRectangle(0, kTopBarHeight, kLeftPanelWidth,
                 screen_height_ - kTopBarHeight - kBottomBarHeight, kPanel);
-  DrawRectangle(kLeftPanelWidth, kTopBarHeight,
-                screen_width_ - kLeftPanelWidth,
+  DrawRectangle(kLeftPanelWidth, kTopBarHeight, screen_width_ - kLeftPanelWidth,
                 screen_height_ - kTopBarHeight - kBottomBarHeight, kWhite);
 
   DrawText("SUMMARY", 18, kTopBarHeight + 18, 18, kText);
@@ -1618,93 +1731,57 @@ void Renderer::DrawConvergedMap(const std::vector<Point>& points,
 void Renderer::DrawHelp() const {
   DrawRectangle(0, 0, screen_width_, screen_height_, Fade(BLACK, 0.55f));
 
-  float panel_width =
-      std::min(650.0f, static_cast<float>(screen_width_) - 40.0f);
-
-  float panel_height =
-      std::min(500.0f, static_cast<float>(screen_height_) - 40.0f);
-
-  float panel_x = (screen_width_ - panel_width) / 2.0f;
-
-  float panel_y = (screen_height_ - panel_height) / 2.0f;
-
+  const float panel_width =
+      std::min(680.0f, static_cast<float>(screen_width_) - 40.0f);
+  const float panel_height =
+      std::min(590.0f, static_cast<float>(screen_height_) - 30.0f);
+  const float panel_x = (screen_width_ - panel_width) / 2.0f;
+  const float panel_y = (screen_height_ - panel_height) / 2.0f;
   Rectangle panel = {panel_x, panel_y, panel_width, panel_height};
-
   DrawRectangleRec(panel, kWhite);
-
   DrawRectangleLinesEx(panel, 2.0f, kBorder);
+  DrawText("HELP & CONTROLS", static_cast<int>(panel_x + 22),
+           static_cast<int>(panel_y + 16), 26, kText);
 
-  DrawText("HELP", static_cast<int>(panel_x + 20),
-           static_cast<int>(panel_y + 18), 28, kText);
+  int y = static_cast<int>(panel_y + 58);
+  const int left = static_cast<int>(panel_x + 25);
+  const int right = static_cast<int>(panel_x + 190);
+  auto row = [&](const char* key, const char* description) {
+    DrawText(key, left, y, 15, kText);
+    DrawText(description, right, y, 15, kMutedText);
+    y += 23;
+  };
+  row("SPACE", "Advance one K-means iteration");
+  row("R", "Start or stop automatic running");
+  row("ESC", "Soft reset using the same seed");
+  row("F2", "Reset map zoom and pan");
+  row("Middle mouse", "Pan the map");
+  row("Mouse wheel", "Zoom around the cursor");
+  row("[ / ]", "Decrease / increase run speed");
+  row("M", "Open multi-run experiment setup");
+  row("Q", "Quit the application");
+  row("Seed field", "Edit the integer seed in setup; press Enter to apply");
+  row("Randomize seed", "Choose a new seed for the next initialization");
+  row("Empty centroid",
+      "A notice lists centroids reinitialized after an iteration");
 
-  int y = static_cast<int>(panel_y + 65);
-
-  DrawText("SPACE", static_cast<int>(panel_x + 25), y, 16, kText);
-
-  DrawText("Step", static_cast<int>(panel_x + 130), y, 16, kMutedText);
-
-  y += 27;
-
-  DrawText("R", static_cast<int>(panel_x + 25), y, 16, kText);
-
-  DrawText("Start / stop event", static_cast<int>(panel_x + 130), y, 16,
-           kMutedText);
-
-  y += 27;
-
-  DrawText("ESC", static_cast<int>(panel_x + 25), y, 16, kText);
-
-  DrawText("Reset event", static_cast<int>(panel_x + 130), y, 16, kMutedText);
-
-  y += 27;
-
-  DrawText("F2", static_cast<int>(panel_x + 25), y, 16, kText);
-
-  DrawText("Reset view", static_cast<int>(panel_x + 130), y, 16, kMutedText);
-
-  y += 27;
-
-  DrawText("Middle mouse", static_cast<int>(panel_x + 25), y, 16, kText);
-
-  DrawText("Pan", static_cast<int>(panel_x + 130), y, 16, kMutedText);
-
-  y += 27;
-
-  DrawText("Mouse wheel", static_cast<int>(panel_x + 25), y, 16, kText);
-
-  DrawText("Zoom", static_cast<int>(panel_x + 130), y, 16, kMutedText);
-
-  y += 27;
-
-  DrawText("Q", static_cast<int>(panel_x + 25), y, 16, kText);
-
-  DrawText("Quit application", static_cast<int>(panel_x + 130), y, 16,
-           kMutedText);
-
-  y += 40;
-
-  DrawText("FILE", static_cast<int>(panel_x + 20), y, 18, kText);
-
-  y += 30;
-
-  Rectangle filename_box = {panel_x + 20, static_cast<float>(y),
-                            panel_width - 40, 38.0f};
-
+  y += 7;
+  DrawLine(left, y, static_cast<int>(panel_x + panel_width - 25), y, kBorder);
+  y += 13;
+  DrawText("LOAD POINTS FROM FILE", left, y, 16, kText);
+  y += 25;
+  Rectangle filename_box = {panel_x + 22, static_cast<float>(y),
+                            panel_width - 44, 36.0f};
   DrawRectangleRec(filename_box, kBackground);
-
   DrawRectangleLinesEx(filename_box, 1.0f, filename_active_ ? kText : kBorder);
-
   const char* filename = filename_input_.empty()
-                             ? "Type filename and press Enter"
+                             ? "Click here, type filename, then press Enter"
                              : filename_input_.c_str();
-
-  Color filename_color = filename_input_.empty() ? kMutedText : kText;
-
   DrawText(filename, static_cast<int>(filename_box.x + 10),
-           static_cast<int>(filename_box.y + 10), 16, filename_color);
-
-  DrawText("F1 / H: close help", static_cast<int>(panel_x + 20),
-           static_cast<int>(panel_y + panel_height - 35), 14, kMutedText);
+           static_cast<int>(filename_box.y + 9), 15,
+           filename_input_.empty() ? kMutedText : kText);
+  DrawText("F1 / H / Esc: close help", left,
+           static_cast<int>(panel_y + panel_height - 27), 14, kMutedText);
 }
 
 void Renderer::FitView(const std::vector<Point>& points,

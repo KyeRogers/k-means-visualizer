@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <sstream>
 
@@ -28,9 +29,19 @@ Simulator::Simulator()
       converged_{false},
       centroid_mode_{Renderer::CentroidInitialization::Randomized},
       deferred_kmeans_plus_plus_{false},
-      seed_{42} {};
+      seed_{42},
+      rng_{static_cast<std::mt19937::result_type>(42)} {}
+
+void Simulator::SetSeed(int seed) {
+  seed_ = seed;
+  rng_.seed(static_cast<std::mt19937::result_type>(seed_));
+}
 
 void Simulator::Reset(const bool complete_reset) {
+  // A reset starts the same random sequence again, making the run repeatable.
+  rng_.seed(static_cast<std::mt19937::result_type>(seed_));
+  renderer_.SetEmptyCentroidNotifications({}, -1);
+
   if (!complete_reset) {
     for (Point& point : points_) {
       point.SetCentroid(0);
@@ -64,20 +75,25 @@ void Simulator::LoadFromFile(const std::string& filename) {
   std::string line;
   while (std::getline(input_file, line)) {
     std::stringstream ss(line);
-    ss >> temp_x >> temp_y;
-    points_.push_back(Point(temp_x, temp_y, 0));
+    if (ss >> temp_x >> temp_y) {
+      points_.push_back(Point(temp_x, temp_y, 0));
+    }
   }
 }
 
 void Simulator::Run() {
   renderer_.Initialize(kWorldMin, kWorldMax);
+  renderer_.SetSeed(seed_);
 
   while (!renderer_.ShouldClose()) {
-    // 1. Get user input
     Renderer::InputEvents events = renderer_.PollInput(converged_);
-    // 2. Handle input
+
+    if (events.seed_changed) {
+      SetSeed(events.seed);
+    }
 
     if (events.k_selected) {
+      rng_.seed(static_cast<std::mt19937::result_type>(seed_));
       k_ = events.k;
       centroid_mode_ = events.initialization_method;
       manual_centroids_ = events.manual_centroids;
@@ -99,6 +115,7 @@ void Simulator::Run() {
       converged_ = false;
       running_ = false;
       run_elapsed_seconds_ = 0.0;
+      renderer_.SetEmptyCentroidNotifications({}, -1);
     }
 
     if (events.load_file) {
@@ -145,7 +162,6 @@ void Simulator::Run() {
       Reset(false);
     }
 
-    // 3. Automatically run K-means if enabled
     if (running_ && !converged_) {
       run_elapsed_seconds_ += GetFrameTime();
       if (run_elapsed_seconds_ >= run_interval_seconds_) {
@@ -156,59 +172,91 @@ void Simulator::Run() {
       running_ = false;
     }
 
-    // 4. Render the NEW state
-    renderer_.Render(points_, centroids_, current_cost_, iteration_,
-                     converged_, run_interval_seconds_);
+    renderer_.Render(points_, centroids_, current_cost_, iteration_, converged_,
+                     run_interval_seconds_);
   }
+  renderer_.Close();
 }
-/** @brief returns true if succeded, false if converged  */
+
+/** @brief returns true if succeeded, false if converged */
 void Simulator::KMeansIteration() {
   if (deferred_kmeans_plus_plus_ && !points_.empty()) {
     GenerateCentroids();
   }
   if (points_.empty() || centroids_.empty()) {
+    renderer_.SetEmptyCentroidNotifications({}, iteration_);
     return;
   }
 
   iteration_++;
   bool changed{false};
-  // asign each point to the nearest centroid
-  current_cost_ = 0;
+  std::vector<bool> centroid_has_points(centroids_.size(), false);
+
+  // Assign each point to its nearest centroid.
+  current_cost_ = 0.0;
   for (Point& point : points_) {
-    int temp{point.GetCentroid()};
+    int previous_centroid = point.GetCentroid();
     current_cost_ += ClosestCentroid(point);
-    if (temp != point.GetCentroid()) {
+    if (previous_centroid != point.GetCentroid()) {
       changed = true;
+    }
+    const int assigned = point.GetCentroid();
+    if (assigned >= 1 &&
+        assigned <= static_cast<int>(centroid_has_points.size())) {
+      centroid_has_points[static_cast<std::size_t>(assigned - 1)] = true;
     }
   }
 
-  // update centroids
+  // Update centroids from the points assigned to each cluster.
   std::vector<CentroidCache> centroid_cache(centroids_.size());
-  for (Point& point : points_) {
-    centroid_cache[point.GetCentroid() - 1].Update(point.GetX(), point.GetY());
+  for (const Point& point : points_) {
+    const int assigned = point.GetCentroid();
+    if (assigned >= 1 && assigned <= static_cast<int>(centroid_cache.size())) {
+      centroid_cache[static_cast<std::size_t>(assigned - 1)].Update(
+          point.GetX(), point.GetY());
+    }
   }
 
-  for (int i{0}; i < centroids_.size(); i++) {
+  for (std::size_t i = 0; i < centroids_.size(); ++i) {
     if (centroid_cache[i].count > 0) {
       centroids_[i].SetX(centroid_cache[i].NewX());
       centroids_[i].SetY(centroid_cache[i].NewY());
     }
   }
 
-  if (changed == false) {
-    converged_ = true;
+  // Reinitialize every empty centroid and report its 1-based index to the UI.
+  std::vector<int> reinitialized;
+  for (std::size_t i = 0; i < centroids_.size(); ++i) {
+    if (!centroid_has_points[i]) {
+      centroids_[i].SetX(GenerateRandomDouble());
+      centroids_[i].SetY(GenerateRandomDouble());
+      reinitialized.push_back(static_cast<int>(i + 1));
+      changed =
+          true;  // A relocation means the algorithm must run another step.
+    }
   }
+
+  renderer_.SetEmptyCentroidNotifications(reinitialized, iteration_);
+  converged_ = !changed;
 }
 
 void Simulator::RunMultiple(const int total) {
-  // storage cache
+  if (points_.empty() || centroids_.empty() || total <= 0) {
+    renderer_.SetMultiRunResults({}, points_, centroids_, -1);
+    return;
+  }
   std::vector<double> costs(total);
-  double min_cost{__DBL_MAX__};
-  int best_idx{0};
+  double min_cost = std::numeric_limits<double>::max();
+  int best_idx = 0;
   std::vector<Point> best_points;
   std::vector<Centroid> best_centroids;
-  // loop total times
-  for (int i{0}; i < total; i++) {
+  const int original_seed = seed_;
+
+  for (int i = 0; i < total; ++i) {
+    // Each run has a deterministic but distinct seed derived from the chosen
+    // seed.
+    seed_ = static_cast<int>(static_cast<unsigned int>(original_seed) +
+                             static_cast<unsigned int>(i));
     Reset(false);
     while (!converged_) {
       KMeansIteration();
@@ -216,18 +264,19 @@ void Simulator::RunMultiple(const int total) {
     if (current_cost_ < min_cost) {
       min_cost = current_cost_;
       best_idx = i;
-      // copy the best_points
       best_points = points_;
       best_centroids = centroids_;
     }
     costs[i] = current_cost_;
   }
 
-  // render
+  seed_ = original_seed;
+  rng_.seed(static_cast<std::mt19937::result_type>(seed_));
+  renderer_.SetSeed(seed_);
   renderer_.SetMultiRunResults(costs, best_points, best_centroids, best_idx);
 }
 
-/** @brief returns the squared euclidian distance between two points*/
+/** @brief returns the squared Euclidean distance between two points */
 double Simulator::SquaredEuclidianDistance(const double x1, const double y1,
                                            const double x2,
                                            const double y2) const {
@@ -236,25 +285,23 @@ double Simulator::SquaredEuclidianDistance(const double x1, const double y1,
 
 /** @brief sets the point to the correct centroid, returns the distance cost */
 double Simulator::ClosestCentroid(Point& point) {
-  double min_distance_{__DBL_MAX__};
-  int index{1};
-  for (int i{0}; i < centroids_.size(); i++) {
-    double temp = SquaredEuclidianDistance(
+  double min_distance = std::numeric_limits<double>::max();
+  int index = 1;
+  for (std::size_t i = 0; i < centroids_.size(); ++i) {
+    double distance = SquaredEuclidianDistance(
         centroids_[i].GetX(), centroids_[i].GetY(), point.GetX(), point.GetY());
-    if (temp < min_distance_) {
-      min_distance_ = temp;
-      index = i + 1;
+    if (distance < min_distance) {
+      min_distance = distance;
+      index = static_cast<int>(i) + 1;
     }
   }
   point.SetCentroid(index);
-  return min_distance_;
+  return min_distance;
 }
 
 double Simulator::GenerateRandomDouble() {
-  std::random_device rd;
-  std::mt19937 gen(seed_);
   std::uniform_real_distribution<double> dist(kWorldMin, kWorldMax);
-  return dist(gen);
+  return dist(rng_);
 }
 
 void Simulator::GenerateCentroids() {
@@ -266,7 +313,7 @@ void Simulator::GenerateCentroids() {
   deferred_kmeans_plus_plus_ = false;
 
   if (centroid_mode_ == Renderer::CentroidInitialization::Randomized) {
-    for (int i = 0; i < k_; i++) {
+    for (int i = 0; i < k_; ++i) {
       centroids_.emplace_back(GenerateRandomDouble(), GenerateRandomDouble());
     }
     return;
@@ -274,18 +321,17 @@ void Simulator::GenerateCentroids() {
 
   if (points_.empty()) {
     deferred_kmeans_plus_plus_ = true;
-    for (int i = 0; i < k_; i++) {
+    for (int i = 0; i < k_; ++i) {
       centroids_.emplace_back(GenerateRandomDouble(), GenerateRandomDouble());
     }
     return;
   }
 
-  std::mt19937 generator(std::random_device{}());
-  std::uniform_int_distribution<std::size_t> first_point(0,
-                                                         points_.size() - 1);
-  const std::size_t first_index = first_point(generator);
+  std::uniform_int_distribution<std::size_t> first_point(0, points_.size() - 1);
+  const std::size_t first_index = first_point(rng_);
   const Point& first = points_[first_index];
   centroids_.emplace_back(first.GetX(), first.GetY());
+
   std::vector<bool> selected_points(points_.size(), false);
   selected_points[first_index] = true;
 
@@ -294,13 +340,12 @@ void Simulator::GenerateCentroids() {
     double total_weight = 0.0;
 
     for (std::size_t i = 0; i < points_.size(); ++i) {
-      double nearest_distance = __DBL_MAX__;
+      double nearest_distance = std::numeric_limits<double>::max();
       for (const Centroid& centroid : centroids_) {
-        nearest_distance =
-            std::min(nearest_distance,
-                     SquaredEuclidianDistance(
-                         points_[i].GetX(), points_[i].GetY(),
-                         centroid.GetX(), centroid.GetY()));
+        nearest_distance = std::min(
+            nearest_distance,
+            SquaredEuclidianDistance(points_[i].GetX(), points_[i].GetY(),
+                                     centroid.GetX(), centroid.GetY()));
       }
       weights[i] = nearest_distance;
       total_weight += nearest_distance;
@@ -310,23 +355,21 @@ void Simulator::GenerateCentroids() {
     if (total_weight > 0.0) {
       std::discrete_distribution<std::size_t> choose_point(weights.begin(),
                                                            weights.end());
-      selected_point = choose_point(generator);
+      selected_point = choose_point(rng_);
     } else {
       std::vector<std::size_t> unselected_points;
       for (std::size_t i = 0; i < selected_points.size(); ++i) {
-        if (!selected_points[i]) {
-          unselected_points.push_back(i);
-        }
+        if (!selected_points[i]) unselected_points.push_back(i);
       }
 
       if (unselected_points.empty()) {
         std::uniform_int_distribution<std::size_t> choose_point(
             0, points_.size() - 1);
-        selected_point = choose_point(generator);
+        selected_point = choose_point(rng_);
       } else {
         std::uniform_int_distribution<std::size_t> choose_point(
             0, unselected_points.size() - 1);
-        selected_point = unselected_points[choose_point(generator)];
+        selected_point = unselected_points[choose_point(rng_)];
       }
     }
 

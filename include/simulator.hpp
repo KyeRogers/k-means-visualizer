@@ -1,6 +1,7 @@
 #ifndef SIMULATOR_HPP
 #define SIMULATOR_HPP
 
+#include <random>
 #include <string>
 #include <vector>
 
@@ -28,7 +29,7 @@ class Simulator {
   void KMeansIteration();
   void Run();
   void RunMultiple(const int total);
-
+  void SetSeed(int seed);
   void Reset(const bool complete_reset);
   void LoadFromFile(const std::string& filename);
 
@@ -47,12 +48,12 @@ class Simulator {
   std::vector<Vector2> manual_centroids_;
   std::vector<Centroid> initial_centroids_;
   bool deferred_kmeans_plus_plus_;
-  int seed_;
+  int seed_{42};
+  std::mt19937 rng_{42};
 
   double SquaredEuclidianDistance(const double x1, const double y1,
                                   const double x2, const double y2) const;
   double ClosestCentroid(Point& point);
-
   double GenerateRandomDouble();
   void GenerateCentroids();
 };
