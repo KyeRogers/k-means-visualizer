@@ -20,7 +20,8 @@ void DatasetGenerator::SetDataset(const int seed, std::mt19937 rng,
                                   DatasetType type, const int points,
                                   const int blob_count,
                                   const int standard_deviation_x,
-                                  const int standard_deviation_y, const int ring_radius) {
+                                  const int standard_deviation_y,
+                                  const int ring_radius) {
   seed_ = seed;
   rng_ = rng;
   type_ = type;
@@ -104,8 +105,7 @@ void DatasetGenerator::GenerateElongatedClusters() {
   // Generate blob centers and random rotations.
 
   for (int i = 0; i < blob_count_; ++i) {
-    Blob blob{GenerateRandomDouble(), GenerateRandomDouble(),
-              GenerateAngle()};
+    Blob blob{GenerateRandomDouble(), GenerateRandomDouble(), GenerateAngle()};
 
     blobs.push_back(blob);
   }
@@ -151,13 +151,12 @@ void DatasetGenerator::GenerateElongatedClusters() {
 }
 
 void DatasetGenerator::GenerateRing() {
-
   const double centre_x{500.0}, centre_y{500.0};
 
   double x_coordenate, y_coordenate;
 
   for (int i{0}; i < point_count_; i++) {
-    double angle = GenerateAngle() * 2; 
+    double angle = GenerateAngle() * 2;
     const double cos_rotation = cos(angle);
     const double sin_rotation = sin(angle);
     do {
@@ -166,10 +165,36 @@ void DatasetGenerator::GenerateRing() {
       x_coordenate = centre_x + radius * cos_rotation;
       y_coordenate = centre_y + radius * sin_rotation;
     } while (!IsValidPoint(x_coordenate, y_coordenate));
-    
+
     points_.emplace_back(Point(x_coordenate, y_coordenate, 0));
   }
-
 }
 
-void DatasetGenerator::GenerateTwoMoons() {}
+void DatasetGenerator::GenerateTwoMoons() {
+  double centre_x_1{500.0 - (ring_radius_ / 2)};
+  double centre_x_2{500.0 + (ring_radius_ / 2)};
+  double y_centre{500.0};
+
+
+  std::uniform_int_distribution moon_dist(0, 1);
+
+  double x_coordenate, y_coordenate;
+  for (int i{0}; i < point_count_; i++) {
+    // choose which moon
+    double angle = GenerateAngle();
+    do {
+      double offset = GenerateGaussianOffset(standard_deviation_x_);
+      double radius = ring_radius_ + offset;
+      if (moon_dist(rng_) == 0) {
+        // second moon
+        x_coordenate = centre_x_1 + radius * cos(angle);
+      } else {
+        angle = -angle;
+        x_coordenate = centre_x_2 + radius * cos(angle);
+        
+      }
+      y_coordenate = y_centre + radius * sin(angle);
+    } while (!IsValidPoint(x_coordenate, y_coordenate));
+    points_.emplace_back(Point(x_coordenate, y_coordenate, 0));
+  }
+}

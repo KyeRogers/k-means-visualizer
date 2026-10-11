@@ -131,7 +131,9 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
         selected_dataset_type_ != DatasetType::Random;
     const bool elongated =
         selected_dataset_type_ == DatasetType::ElongatedClusters;
-    const bool ring = selected_dataset_type_ == DatasetType::Ring;
+    const bool ring_or_moons =
+        selected_dataset_type_ == DatasetType::Ring ||
+        selected_dataset_type_ == DatasetType::TwoMoons;
     if (needs_deviation && IsKeyPressed(KEY_J))
       selected_dataset_deviation_x_ =
           std::max(1, selected_dataset_deviation_x_ - 5);
@@ -144,10 +146,10 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     if (elongated && IsKeyPressed(KEY_I))
       selected_dataset_deviation_y_ =
           std::min(200, selected_dataset_deviation_y_ + 5);
-    if (ring && IsKeyPressed(KEY_N))
+    if (ring_or_moons && IsKeyPressed(KEY_N))
       selected_dataset_ring_radius_ =
           std::max(1, selected_dataset_ring_radius_ - 10);
-    if (ring && IsKeyPressed(KEY_B))
+    if (ring_or_moons && IsKeyPressed(KEY_B))
       selected_dataset_ring_radius_ =
           std::min(499, selected_dataset_ring_radius_ + 10);
     if (!dataset_deviation_x_active_)
@@ -290,7 +292,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       } else if (selected_dataset_type_ == DatasetType::ElongatedClusters &&
                  CheckCollisionPointRec(mouse, deviation_y_box)) {
         dataset_deviation_y_active_ = true;
-      } else if (selected_dataset_type_ == DatasetType::Ring &&
+      } else if ((selected_dataset_type_ == DatasetType::Ring ||
+                  selected_dataset_type_ == DatasetType::TwoMoons) &&
                  CheckCollisionPointRec(mouse, ring_radius_box)) {
         dataset_ring_radius_active_ = true;
       } else if (CheckCollisionPointRec(mouse, random_data)) {
@@ -611,6 +614,8 @@ void Renderer::DrawSetup() const {
   const bool elongated =
       selected_dataset_type_ == DatasetType::ElongatedClusters;
   const bool ring = selected_dataset_type_ == DatasetType::Ring;
+  const bool moons = selected_dataset_type_ == DatasetType::TwoMoons;
+  const bool ring_or_moons = ring || moons;
   if (blobs) {
     DrawText("BLOBS", 40, 618, 14, kMuted);
     DrawButton({40, 640, 42, 32}, "-");
@@ -634,12 +639,16 @@ void Renderer::DrawSetup() const {
     DrawText("Y", 595, 648, 14, kMuted);
     DrawText("U/I", 620, 648, 14, kMuted);
   }
-  if (ring) {
-    DrawText("RING RADIUS", 700, 618, 14, kMuted);
+  if (ring_or_moons) {
+    DrawText(moons ? "MOON RADIUS" : "RING RADIUS", 700, 618, 14, kMuted);
     DrawTextInput({700, 640, 180, 32}, dataset_ring_radius_input_,
                   dataset_ring_radius_active_);
-    DrawText("average radius (N/B)", 700, 678, 14, kMuted);
-    DrawText("thickness = STD DEV (max)", 900, 648, 14, kAccent);
+    DrawText(moons ? "average radius (N/B)" : "average radius (N/B)", 700,
+             678, 14, kMuted);
+    if (ring)
+      DrawText("thickness = STD DEV (max)", 900, 648, 14, kAccent);
+    else
+      DrawText("spread = STD DEV", 900, 648, 14, kAccent);
   }
 
   DrawButton({static_cast<float>(screen_width_ - 260), 190, 210, 44},
