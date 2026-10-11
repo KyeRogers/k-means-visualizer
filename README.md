@@ -1,97 +1,200 @@
-# K-Means Clustering Visualizer
+# K-Means Studio
 
-An interactive **K-Means clustering visualizer built from scratch in C++17**.
+![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)
+![Build](https://img.shields.io/badge/CMake-3.15%2B-green.svg)
+![Graphics](https://img.shields.io/badge/Graphics-Raylib-orange.svg)
+![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)
 
-## Goal
+An interactive, real-time C++17 application for exploring K-Means clustering.
+Generate or load two-dimensional datasets, configure centroid initialization,
+and watch assignments, centroid movement, cost, and convergence develop on an
+interactive map.
 
-The goal of this project is to understand and implement the K-Means clustering algorithm without relying on machine-learning libraries.
+![Interactive Demo](images/demo.gif)
 
-The project will visualize how K-Means:
+---
 
-1. Initializes \(K\) centroids.
-2. Assigns each point to its nearest centroid.
-3. Recalculates each centroid using the mean of its assigned points.
-4. Repeats these steps until the algorithm converges.
+## Screenshots
 
-The visualizer will make the optimization process visible by showing cluster assignments, centroid movement, iterations, and the clustering objective.
 
-## Learning Objectives
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="images/welcome.png" alt="K-Means Studio welcome screen">
+      <br><sub><b>Welcome Screen</b><br>A short introduction to K-Means Studio</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="images/controls.png" alt="K-Means Studio setup screen">
+      <br><sub><b>Dataset Setup</b><br>Configure K, seeds, and dataset parameters</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="images/setup_map.png" alt="K-Means Studio simulation map">
+      <br><sub><b>Interactive Simulation</b><br>Watch clusters and centroids change in real time</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="images/convergence_summary.png" alt="K-Means Studio convergence summary">
+      <br><sub><b>Convergence Summary</b><br>Review the final cost, iterations, and map</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="images/multi_run.png" width="60%" alt="K-Means Studio multi-run results">
+      <br><sub><b>Multi-Run Comparison</b><br>Compare independent initializations and view the best result</sub>
+    </td>
+  </tr>
+</table>
 
-Through this project I aim to understand:
-
-* Unsupervised learning and clustering
-* Euclidean distance and squared distance
-* Centroids and cluster assignments
-* The K-Means objective function
-* Why the mean minimizes squared distance
-* Iterative optimization and convergence
-* Local minima and initialization
-* The effect of choosing different values of \(K\)
-* Limitations of K-Means on non-spherical or irregularly shaped data
+---
 
 ## Features
 
-* Add points to the 2D map with the mouse or load point coordinates from a
-  data file.
-* Generate a fresh deterministic random dataset from the setup screen or the
-  **NEW DATASET** button (`G`) without changing the selected K or
-  initialization method.
-* Choose random, blobs, elongated clusters, two moons, or ring datasets.
-  Adjust the generated point count with Up/Down on the setup screen.
-* Choose the number of clusters \(K\) and initialize centroids using:
-  * **Randomized** positions.
-  * **K-means++**, which selects seeds from the dataset using squared-distance
-    weighting. If points are added after choosing this mode, seeding is
-    deferred until the first iteration.
-  * **Manual** placement on the map.
-* View cluster assignments, centroid movement, iteration count, and clustering
-  cost.
-* Step through iterations or run automatically. Automatic run starts slowly
-  (one iteration every 2.5 seconds); use `[` / `]` to change its speed.
-* Run multiple independent initializations and compare their costs and best
-  clustering.
-* View the final clustering map from the convergence summary.
-* **Soft reset** to rerun with the same points, \(K\), and initialization
-  method.
-* **Hard reset** to keep the points while changing \(K\) or the initialization
-  method. The main menu starts over with an empty dataset.
-* Pan and zoom the map.
+- **Interactive K-Means:** Assign points to their nearest centroid, recalculate
+  means, and repeat until convergence.
+- **Three initialization modes:** Randomized centroid placement, K-Means++,
+  and manual centroid placement.
+- **Dataset generation:** Create random, blob, elongated-cluster, Two Moons,
+  and ring datasets.
+- **Dataset configuration:** Adjust point count, independent point and centroid
+  seeds, blob count, standard deviations, ring/moon radius, and ring thickness.
+- **Custom dataset loading:** Load two-dimensional point coordinates from a
+  space-delimited file.
+- **Step-by-step or automatic execution:** Inspect each iteration or let the
+  simulation run automatically with adjustable speed.
+- **Convergence summary:** View final metrics and the resulting clustering map.
+- **Multi-run comparison:** Run multiple independent initializations, scroll
+  through their costs, and inspect the best final map.
+- **Interactive map:** Add points manually, pan, zoom, and reset the view.
+- **Keyboard-first controls:** Every major action is available through a
+  keyboard shortcut shown in the interface.
+
+---
+
+## Build and Run
+
+### Requirements
+
+- C++17-compatible compiler (`gcc`, `clang`, or `MSVC`)
+- CMake 3.15 or newer
+- Desktop graphics environment with OpenGL support
+
+> **Note:** CMake fetches Raylib during the initial configuration if it is not
+> already available. An active internet connection may be required the first
+> time the project is configured.
+
+### Build Steps
+
+```sh
+# Clone the repository
+git clone https://github.com/KyeRogers/k-means-visualizer.git
+cd k-means-visualizer
+
+# Configure and build
+cmake -S . -B build
+cmake --build build
+
+# Run the executable
+./build/k-means
+```
+
+---
 
 ## Controls
 
-| Action | Control |
-| --- | --- |
-| Add a data point | Left-click the map |
-| Step one iteration | `Space` or **STEP** |
-| Start / stop automatic run | `R` or **RUN / STOP** |
-| Adjust automatic run speed | `[` / `]` or **- [** / **+ ]** |
-| Soft reset | `Esc` or **SOFT RESET** |
-| Change \(K\) or initialization method, keeping points | **HARD RESET** |
-| Open multi-run setup | `M` or **MULTI-RUN** |
-| Open setup | `S` or **SETUP** |
-| Return to the main menu | `M` / `Esc` in result screens or **MAIN MENU** |
-| Reset map view | `F2` |
-| Pan / zoom | Middle-drag / mouse wheel |
-| Open help | `F1` or `H` |
-| Load point coordinates | `L` or **LOAD (L)**, then enter a file path |
-| Generate a fresh random dataset | `G` or **NEW DATA (G)** |
-| Randomize centroid seed on setup | `P` or **RANDOMIZE (P)** |
-| Choose dataset type | Setup cards or `4`-`8` |
-| Change generated point count | `Up` / `Down` on setup |
-| Change blob count | `,` / `.` or the blob +/- controls on setup |
-| Change standard deviation | `J` / `K` or the standard-deviation +/- controls on setup |
-| Scroll multi-run costs | Mouse wheel or `Up` / `Down` on the results screen |
+| Input | Action |
+| :--- | :--- |
+| **Enter** | Continue from the welcome screen or start a configured run |
+| **Left Click** | Add a point to the map or activate a control |
+| **Backspace** | Remove the last manually placed centroid |
+| **Space** | Step one K-Means iteration |
+| **R** | Start or stop automatic execution |
+| **Esc** | Reset the current run or leave result screens |
+| **`[` / `]`** | Decrease or increase automatic run speed |
+| **M** | Open multi-run setup |
+| **S** | Open the setup screen |
+| **F1** or **H** | Toggle the help panel |
+| **F2** | Reset map zoom and pan |
+| **L** | Open point-file loading |
+| **G** | Generate a fresh dataset using the current dataset settings |
+| **P** | Randomize the centroid seed |
+| **4–8** | Select Random, Blobs, Elongated, Two Moons, or Ring datasets |
+| **Up / Down** | Change generated point count or scroll multi-run results |
+| **`,` / `.`** | Decrease or increase blob count |
+| **J / K** | Decrease or increase X standard deviation |
+| **U / I** | Decrease or increase Y standard deviation for elongated clusters |
+| **N / B** | Decrease or increase ring/moon radius |
+| **Middle Drag / Wheel** | Pan or zoom the map |
+| **Q** | Quit |
 
-When the run converges, a summary screen shows the final metrics and map.
-Multi-run results also show the best final clustering map.
-In manual initialization, click to place centroids; use `Backspace` to undo
-the last placement and `R` to clear placements.
+The setup screen displays the controls relevant to the selected dataset. For
+example, blob count is shown only for blob-based datasets, while radius is
+shown for Ring and Two Moons datasets. For Ring datasets, standard deviation
+controls the maximum ring thickness.
 
-## Implementation
+---
 
-* **Language:** C++17
-* **Graphics/UI:** Raylib
-* **Machine-learning implementation:** From scratch
-* **External ML libraries:** None
+## Loading Point Files
 
-The primary purpose of this project is **understanding the mathematics and mechanics of K-Means**, rather than building the most optimized clustering implementation possible.
+Point files contain one `x y` coordinate pair per line, separated by spaces:
+
+```text
+120 240
+150 210
+620 510
+590 540
+```
+
+Coordinates should normally fall within the visualizer's `0` to `1000` world
+range. Choose **LOAD (L)**, type the file path, and press Enter.
+
+---
+
+## How K-Means Works
+
+For a selected value of `K`, the algorithm:
+
+1. Initializes `K` centroids.
+2. Assigns each point to its nearest centroid.
+3. Moves each centroid to the mean of its assigned points.
+4. Repeats until assignments and centroids converge.
+
+The visualizer reports the current iteration and clustering cost, making the
+optimization process visible. Different initialization seeds can reach
+different local minima, which is why the multi-run view is useful.
+
+---
+
+## Architecture
+
+```text
+┌───────────────────────────────────────────────────────────────┐
+│                           Renderer                            │
+│        Raylib window, screens, controls, map visualization    │
+└───────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+┌───────────────────────────────────────────────────────────────┐
+│                           Simulator                           │
+│       K-Means lifecycle, iteration loop, seeds, file I/O     │
+└───────────────────────────────┬───────────────────────────────┘
+                                │
+                                ▼
+┌───────────────────────────────────────────────────────────────┐
+│                        DatasetGenerator                       │
+│       Configurable two-dimensional dataset generation        │
+└───────────────────────────────────────────────────────────────┘
+```
+
+- **`Renderer`** manages the welcome screen, setup menu, simulation dashboard,
+  convergence summary, multi-run results, input, and map drawing.
+- **`Simulator`** owns points, centroids, K-Means state, iteration timing,
+  convergence, and multi-run execution.
+- **`DatasetGenerator`** creates configured point distributions using separate
+  dataset and centroid randomness.
+
+---
+
+## License
+
+Distributed under the MIT License. See `LICENSE` for details.

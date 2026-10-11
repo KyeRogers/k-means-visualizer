@@ -64,7 +64,15 @@ class Renderer {
   void ShowMainMenu();
 
  private:
-  enum class Screen { Setup, Simulation, Manual, Summary, MultiRun, Results };
+  enum class Screen {
+    Welcome,
+    Setup,
+    Simulation,
+    Manual,
+    Summary,
+    MultiRun,
+    Results
+  };
 
   static constexpr int kMinK = 1;
   static constexpr int kMaxK = 12;
@@ -82,6 +90,7 @@ class Renderer {
   void DrawMap(const std::vector<Point>& points,
                const std::vector<Centroid>& centroids);
   void DrawSetup() const;
+  void DrawWelcome() const;
   void DrawManual(const std::vector<Point>& points);
   void DrawDashboard(const std::vector<Point>& points,
                      const std::vector<Centroid>& centroids, double cost,

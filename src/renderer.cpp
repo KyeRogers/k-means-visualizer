@@ -27,7 +27,7 @@ float Clamp(float value, float low, float high) {
 void Renderer::Initialize(double world_min, double world_max) {
   world_min_ = world_min;
   world_max_ = world_max;
-  screen_ = Screen::Setup;
+  screen_ = Screen::Welcome;
   help_ = false;
   ResetView();
   InitWindow(1280, 800, "K-Means Studio");
@@ -42,6 +42,18 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
   screen_width_ = GetScreenWidth();
   screen_height_ = GetScreenHeight();
   if (!converged) summary_dismissed_ = false;
+
+  if (screen_ == Screen::Welcome) {
+    if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE) ||
+        (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) &&
+         CheckCollisionPointRec(
+             GetMousePosition(),
+             {static_cast<float>(screen_width_ / 2 - 120),
+              static_cast<float>(screen_height_ - 120), 240, 48}))) {
+      screen_ = Screen::Setup;
+    }
+    return events;
+  }
 
   // Filename entry is modal: do not let typed characters trigger simulator
   // shortcuts or interact with controls behind the input.
@@ -525,7 +537,9 @@ void Renderer::Render(const std::vector<Point>& points,
   screen_height_ = GetScreenHeight();
   BeginDrawing();
   ClearBackground(kBackground);
-  if (screen_ == Screen::Setup)
+  if (screen_ == Screen::Welcome)
+    DrawWelcome();
+  else if (screen_ == Screen::Setup)
     DrawSetup();
   else if (screen_ == Screen::Manual)
     DrawManual(points);
@@ -555,6 +569,49 @@ void Renderer::Render(const std::vector<Point>& points,
 
 void Renderer::Close() {
   if (IsWindowReady()) CloseWindow();
+}
+
+void Renderer::DrawWelcome() const {
+  DrawRectangle(0, 0, screen_width_, screen_height_, kBackground);
+  DrawCircle(static_cast<float>(screen_width_ - 130), 135, 92,
+             Fade(kAccent, 0.12f));
+  DrawCircle(static_cast<float>(screen_width_ - 130), 135, 58,
+             Fade(kGood, 0.18f));
+  DrawCircle(static_cast<float>(screen_width_ - 130), 135, 25, kAccent);
+  DrawLineEx({static_cast<float>(screen_width_ - 245), 135},
+             {static_cast<float>(screen_width_ - 15), 135}, 2,
+             Fade(kAccent, 0.35f));
+  DrawLineEx({static_cast<float>(screen_width_ - 130), 20},
+             {static_cast<float>(screen_width_ - 130), 250}, 2,
+             Fade(kGood, 0.35f));
+
+  DrawText("K-MEANS STUDIO", 70, 78, 42, kText);
+  DrawText("Explore how clusters emerge from data", 74, 132, 20, kMuted);
+
+  DrawRectangle(70, 220, 500, 170, kSurface);
+  DrawRectangleLinesEx({70, 220, 500, 170}, 1, kBorder);
+  DrawText("WHAT IS K-MEANS?", 98, 248, 18, kAccent);
+  DrawText("K-means groups points into K clusters by placing", 98, 290, 17,
+           kText);
+  DrawText("centroids and moving them toward their assigned data.", 98, 318, 17,
+           kText);
+  DrawText("It is useful for finding structure in data at a glance.", 98, 346,
+           17, kMuted);
+
+  DrawRectangle(610, 300, 500, 170, kSurface);
+  DrawRectangleLinesEx({610, 300, 500, 170}, 1, kBorder);
+  DrawText("WHAT YOU CAN DO", 638, 328, 18, kGood);
+  DrawText("Generate or load datasets, tune their shape, place", 638, 370, 17,
+           kText);
+  DrawText("centroids, step through runs, and compare multiple results.", 638,
+           398, 17, kText);
+  DrawText("Everything is visual and interactive.", 638, 426, 17, kMuted);
+
+  DrawButton({static_cast<float>(screen_width_ / 2 - 120),
+              static_cast<float>(screen_height_ - 120), 240, 48},
+             "CONTINUE (ENTER)", true);
+  DrawText("Press Enter or click to begin", screen_width_ / 2 - 122,
+           screen_height_ - 58, 16, kMuted);
 }
 
 void Renderer::DrawSetup() const {
