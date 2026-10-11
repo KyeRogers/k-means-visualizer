@@ -72,6 +72,10 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
   if (screen_ == Screen::Setup) {
     ReadTextInput(seed_input_, true, seed_active_);
     ReadTextInput(dataset_seed_input_, true, dataset_seed_active_);
+    ReadTextInput(dataset_deviation_x_input_, true,
+                  dataset_deviation_x_active_);
+    ReadTextInput(dataset_deviation_y_input_, true,
+                  dataset_deviation_y_active_);
     if (IsKeyPressed(KEY_ESCAPE) && !seed_active_) {
       events.main_menu = true;
       return events;
@@ -81,7 +85,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       events.dataset_points = selected_dataset_points_;
       events.dataset_type = selected_dataset_type_;
       events.dataset_blobs = selected_dataset_blobs_;
-      events.dataset_deviation = selected_dataset_deviation_;
+      events.dataset_deviation_x = selected_dataset_deviation_x_;
+      events.dataset_deviation_y = selected_dataset_deviation_y_;
       events.dataset_seed = GetRandomValue(-1000000000, 1000000000);
     }
     if (IsKeyPressed(KEY_P)) {
@@ -117,11 +122,21 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     if (IsKeyPressed(KEY_PERIOD))
       selected_dataset_blobs_ = std::min(12, selected_dataset_blobs_ + 1);
     if (IsKeyPressed(KEY_J))
-      selected_dataset_deviation_ =
-          std::max(1, selected_dataset_deviation_ - 5);
+      selected_dataset_deviation_x_ =
+          std::max(1, selected_dataset_deviation_x_ - 5);
     if (IsKeyPressed(KEY_K))
-      selected_dataset_deviation_ =
-          std::min(200, selected_dataset_deviation_ + 5);
+      selected_dataset_deviation_x_ =
+          std::min(200, selected_dataset_deviation_x_ + 5);
+    if (IsKeyPressed(KEY_U))
+      selected_dataset_deviation_y_ =
+          std::max(1, selected_dataset_deviation_y_ - 5);
+    if (IsKeyPressed(KEY_I))
+      selected_dataset_deviation_y_ =
+          std::min(200, selected_dataset_deviation_y_ + 5);
+    if (!dataset_deviation_x_active_)
+      dataset_deviation_x_input_ = std::to_string(selected_dataset_deviation_x_);
+    if (!dataset_deviation_y_active_)
+      dataset_deviation_y_input_ = std::to_string(selected_dataset_deviation_y_);
 
     auto commit_seed = [&]() {
       char* end = nullptr;
@@ -146,8 +161,29 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       dataset_seed_input_ = std::to_string(selected_dataset_seed_);
       dataset_seed_active_ = false;
     }
+    auto commit_deviation = [](std::string& input, int& selected,
+                               bool& active) {
+      char* end = nullptr;
+      long value = std::strtol(input.c_str(), &end, 10);
+      if (end != input.c_str() && *end == '\0')
+        selected = std::clamp(static_cast<int>(value), 1, 200);
+      input = std::to_string(selected);
+      active = false;
+    };
+    if (dataset_deviation_x_active_ &&
+        IsKeyPressed(KEY_ENTER))
+      commit_deviation(dataset_deviation_x_input_,
+                       selected_dataset_deviation_x_,
+                       dataset_deviation_x_active_);
+    if (dataset_deviation_y_active_ &&
+        IsKeyPressed(KEY_ENTER))
+      commit_deviation(dataset_deviation_y_input_,
+                       selected_dataset_deviation_y_,
+                       dataset_deviation_y_active_);
 
-    if (IsKeyPressed(KEY_ENTER) && !seed_active_) {
+    if (IsKeyPressed(KEY_ENTER) && !seed_active_ &&
+        !dataset_seed_active_ && !dataset_deviation_x_active_ &&
+        !dataset_deviation_y_active_) {
       if (selected_method_ == CentroidInitialization::Manual) {
         manual_centroids_.clear();
         screen_ = Screen::Manual;
@@ -179,8 +215,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       Rectangle data_ring = {750, 500, 140, 64};
       Rectangle blob_minus = {40, 640, 42, 32};
       Rectangle blob_plus = {140, 640, 42, 32};
-      Rectangle deviation_minus = {310, 640, 42, 32};
-      Rectangle deviation_plus = {410, 640, 42, 32};
+      Rectangle deviation_x_box = {310, 640, 90, 32};
+      Rectangle deviation_y_box = {500, 640, 90, 32};
       if (CheckCollisionPointRec(mouse, seed_box)) {
         seed_active_ = true;
       } else if (CheckCollisionPointRec(mouse, dataset_seed_box)) {
@@ -214,18 +250,17 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
         selected_dataset_blobs_ = std::max(1, selected_dataset_blobs_ - 1);
       } else if (CheckCollisionPointRec(mouse, blob_plus)) {
         selected_dataset_blobs_ = std::min(12, selected_dataset_blobs_ + 1);
-      } else if (CheckCollisionPointRec(mouse, deviation_minus)) {
-        selected_dataset_deviation_ =
-            std::max(1, selected_dataset_deviation_ - 5);
-      } else if (CheckCollisionPointRec(mouse, deviation_plus)) {
-        selected_dataset_deviation_ =
-            std::min(200, selected_dataset_deviation_ + 5);
+      } else if (CheckCollisionPointRec(mouse, deviation_x_box)) {
+        dataset_deviation_x_active_ = true;
+      } else if (CheckCollisionPointRec(mouse, deviation_y_box)) {
+        dataset_deviation_y_active_ = true;
       } else if (CheckCollisionPointRec(mouse, random_data)) {
         events.generate_dataset = true;
         events.dataset_points = selected_dataset_points_;
         events.dataset_type = selected_dataset_type_;
         events.dataset_blobs = selected_dataset_blobs_;
-        events.dataset_deviation = selected_dataset_deviation_;
+        events.dataset_deviation_x = selected_dataset_deviation_x_;
+        events.dataset_deviation_y = selected_dataset_deviation_y_;
         events.dataset_seed = GetRandomValue(-1000000000, 1000000000);
       } else if (CheckCollisionPointRec(mouse, start)) {
         if (selected_method_ == CentroidInitialization::Manual) {
@@ -352,7 +387,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     events.dataset_points = selected_dataset_points_;
     events.dataset_type = selected_dataset_type_;
     events.dataset_blobs = selected_dataset_blobs_;
-    events.dataset_deviation = selected_dataset_deviation_;
+    events.dataset_deviation_x = selected_dataset_deviation_x_;
+    events.dataset_deviation_y = selected_dataset_deviation_y_;
     events.dataset_seed = GetRandomValue(-1000000000, 1000000000);
   }
   if (IsKeyPressed(KEY_SPACE)) events.step = true;
@@ -398,7 +434,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       events.dataset_points = selected_dataset_points_;
       events.dataset_type = selected_dataset_type_;
       events.dataset_blobs = selected_dataset_blobs_;
-      events.dataset_deviation = selected_dataset_deviation_;
+      events.dataset_deviation_x = selected_dataset_deviation_x_;
+      events.dataset_deviation_y = selected_dataset_deviation_y_;
       events.dataset_seed = GetRandomValue(-1000000000, 1000000000);
     } else if (CheckCollisionPointRec(mouse, load)) {
       filename_active_ = true;
@@ -532,12 +569,17 @@ void Renderer::DrawSetup() const {
   DrawText(value, 100, 644, 20, kText);
   DrawButton({140, 640, 42, 32}, "+");
   DrawText("[, ] or buttons", 195, 648, 14, kMuted);
-  DrawText("STD DEV", 310, 618, 14, kMuted);
-  DrawButton({310, 640, 42, 32}, "-");
-  std::snprintf(value, sizeof(value), "%d", selected_dataset_deviation_);
-  DrawText(value, 370, 644, 20, kText);
-  DrawButton({410, 640, 42, 32}, "+");
-  DrawText("J/K or buttons", 465, 648, 14, kMuted);
+  DrawText(selected_dataset_type_ == DatasetType::ElongatedClusters
+               ? "STD DEV X / Y"
+               : "STD DEV",
+           310, 618, 14, kMuted);
+  DrawTextInput({310, 640, 90, 32}, dataset_deviation_x_input_,
+                dataset_deviation_x_active_);
+  DrawTextInput({500, 640, 90, 32}, dataset_deviation_y_input_,
+                dataset_deviation_y_active_);
+  DrawText("X", 405, 648, 14, kMuted);
+  DrawText("Y", 595, 648, 14, kMuted);
+  DrawText("J/K: X   U/I: Y", 620, 648, 14, kMuted);
 
   DrawButton({static_cast<float>(screen_width_ - 260), 190, 210, 44},
              selected_method_ == CentroidInitialization::Manual
