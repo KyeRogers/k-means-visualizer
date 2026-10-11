@@ -33,6 +33,11 @@ Through this project I aim to understand:
 
 * Add points to the 2D map with the mouse or load point coordinates from a
   data file.
+* Generate a fresh deterministic random dataset from the setup screen or the
+  **NEW DATASET** button (`G`) without changing the selected K or
+  initialization method.
+* Choose random, blobs, elongated clusters, two moons, or ring datasets.
+  Adjust the generated point count with Up/Down on the setup screen.
 * Choose the number of clusters \(K\) and initialize centroids using:
   * **Randomized** positions.
   * **K-means++**, which selects seeds from the dataset using squared-distance
@@ -42,8 +47,7 @@ Through this project I aim to understand:
 * View cluster assignments, centroid movement, iteration count, and clustering
   cost.
 * Step through iterations or run automatically. Automatic run starts slowly
-  (one iteration every 2.5 seconds); use the `-` / `+` buttons or `[` / `]`
-  keys to change its speed.
+  (one iteration every 2.5 seconds); use `[` / `]` to change its speed.
 * Run multiple independent initializations and compare their costs and best
   clustering.
 * View the final clustering map from the convergence summary.
@@ -60,17 +64,28 @@ Through this project I aim to understand:
 | Add a data point | Left-click the map |
 | Step one iteration | `Space` or **STEP** |
 | Start / stop automatic run | `R` or **RUN / STOP** |
-| Adjust automatic run speed | `[` / `]` or `-` / `+` |
+| Adjust automatic run speed | `[` / `]` or **- [** / **+ ]** |
 | Soft reset | `Esc` or **SOFT RESET** |
 | Change \(K\) or initialization method, keeping points | **HARD RESET** |
 | Open multi-run setup | `M` or **MULTI-RUN** |
+| Open setup | `S` or **SETUP** |
 | Return to the main menu | `M` / `Esc` in result screens or **MAIN MENU** |
 | Reset map view | `F2` |
 | Pan / zoom | Middle-drag / mouse wheel |
-| Open help and load data | `F1` or `H` |
+| Open help | `F1` or `H` |
+| Load point coordinates | `L` or **LOAD (L)**, then enter a file path |
+| Generate a fresh random dataset | `G` or **NEW DATA (G)** |
+| Randomize centroid seed on setup | `P` or **RANDOMIZE (P)** |
+| Choose dataset type | Setup cards or `4`-`8` |
+| Change generated point count | `Up` / `Down` on setup |
+| Change blob count | `,` / `.` or the blob +/- controls on setup |
+| Change standard deviation | `J` / `K` or the standard-deviation +/- controls on setup |
+| Scroll multi-run costs | Mouse wheel or `Up` / `Down` on the results screen |
 
-In manual initialization, right-click to place centroids; use `Z` or
-`Backspace` to undo the last placement and `R` to clear placements.
+When the run converges, a summary screen shows the final metrics and map.
+Multi-run results also show the best final clustering map.
+In manual initialization, click to place centroids; use `Backspace` to undo
+the last placement and `R` to clear placements.
 
 ## Implementation
 

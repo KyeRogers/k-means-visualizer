@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "centroid.hpp"
+#include "dataset_generator.hpp"
 #include "point.hpp"
 #include "renderer.hpp"
 
@@ -32,6 +33,7 @@ class Simulator {
   void SetSeed(int seed);
   void Reset(const bool complete_reset);
   void LoadFromFile(const std::string& filename);
+  void GenerateRandomDataset(int point_count);
 
  private:
   std::vector<Point> points_;
@@ -47,9 +49,12 @@ class Simulator {
   Renderer::CentroidInitialization centroid_mode_;
   std::vector<Vector2> manual_centroids_;
   std::vector<Centroid> initial_centroids_;
+  DatasetGenerator dataset_generator_;
   bool deferred_kmeans_plus_plus_;
   int seed_{42};
   std::mt19937 rng_{42};
+  int dataset_seed_{1337};
+  std::mt19937 dataset_rng_{1337};
 
   double SquaredEuclidianDistance(const double x1, const double y1,
                                   const double x2, const double y2) const;

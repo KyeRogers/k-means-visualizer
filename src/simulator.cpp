@@ -28,9 +28,13 @@ Simulator::Simulator()
       k_{0},
       converged_{false},
       centroid_mode_{Renderer::CentroidInitialization::Randomized},
+      dataset_generator_{static_cast<int>(kWorldMin),
+                         static_cast<int>(kWorldMax)},
       deferred_kmeans_plus_plus_{false},
       seed_{42},
-      rng_{static_cast<std::mt19937::result_type>(42)} {}
+      rng_{static_cast<std::mt19937::result_type>(42)},
+      dataset_seed_{1337},
+      dataset_rng_{static_cast<std::mt19937::result_type>(1337)} {}
 
 void Simulator::SetSeed(int seed) {
   seed_ = seed;
@@ -79,6 +83,16 @@ void Simulator::LoadFromFile(const std::string& filename) {
       points_.push_back(Point(temp_x, temp_y, 0));
     }
   }
+  Reset(false);
+}
+
+void Simulator::GenerateRandomDataset(const int point_count) {
+  dataset_generator_.SetDataset(
+      seed_, rng_, DatasetType::Random, std::max(1, point_count), 3, 30);
+  points_ = dataset_generator_.Generate();
+  centroids_.clear();
+  initial_centroids_.clear();
+  Reset(false);
 }
 
 void Simulator::Run() {
@@ -90,6 +104,10 @@ void Simulator::Run() {
 
     if (events.seed_changed) {
       SetSeed(events.seed);
+    }
+    if (events.dataset_seed_changed) {
+      dataset_seed_ = events.dataset_seed;
+      dataset_rng_.seed(static_cast<std::mt19937::result_type>(dataset_seed_));
     }
 
     if (events.k_selected) {
@@ -121,6 +139,23 @@ void Simulator::Run() {
     if (events.load_file) {
       LoadFromFile(events.load_filename);
       iteration_ = 0;
+    }
+
+    if (events.generate_dataset) {
+      std::random_device random_seed;
+      dataset_seed_ = events.dataset_seed;
+      if (events.dataset_seed == 1337) {
+        dataset_seed_ = static_cast<int>(random_seed());
+      }
+      dataset_rng_.seed(static_cast<std::mt19937::result_type>(dataset_seed_));
+      dataset_generator_.SetDataset(
+          dataset_seed_, dataset_rng_, events.dataset_type,
+          std::max(1, events.dataset_points),
+          std::max(1, events.dataset_blobs), std::max(1, events.dataset_deviation));
+      points_ = dataset_generator_.Generate();
+      centroids_.clear();
+      initial_centroids_.clear();
+      Reset(false);
     }
 
     if (events.multi_run_requested) {

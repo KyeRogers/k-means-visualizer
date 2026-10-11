@@ -24,6 +24,7 @@ add_executable(k-means
   src/point.cpp
   src/renderer.cpp
   src/simulator.cpp
+  src/dataset_generator.cpp
   src/centroid.cpp
 )
 

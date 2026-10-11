@@ -6,7 +6,7 @@
 
 #include "point.hpp"
 
-enum DatasetType { random, blobs, elongated_clusters, two_moons, ring };
+enum class DatasetType { Random, Blobs, ElongatedClusters, TwoMoons, Ring };
 
 class DatasetGenerator {
  public:
@@ -36,6 +36,7 @@ class DatasetGenerator {
   void GenerateBlobs();
   void GenerateElongatedClusters();
   void GenerateRing();
+  void GenerateTwoMoons();
 };
 
 #endif

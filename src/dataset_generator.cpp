@@ -1,10 +1,13 @@
 #include "dataset_generator.hpp"
 
+#include <algorithm>
+#include <cmath>
+
 DatasetGenerator::DatasetGenerator(const int kWorldMin, const int kWorldMax)
     : seed_{42},
       rng_{42},
       points_(0),
-      type_{DatasetType::random},
+      type_{DatasetType::Random},
       point_count_{0},
       blob_count_{0},
       standard_deviation_{30},
@@ -25,13 +28,15 @@ void DatasetGenerator::SetDataset(const int seed, std::mt19937 rng,
 
 std::vector<Point> DatasetGenerator::Generate() {
   points_.clear();
-  if (type_ == DatasetType::random) {
+  if (type_ == DatasetType::Random) {
     GenerateRandom();
-  } else if (type_ == DatasetType::blobs) {
+  } else if (type_ == DatasetType::Blobs) {
     GenerateBlobs();
-  } else if (type_ == DatasetType::elongated_clusters) {
+  } else if (type_ == DatasetType::ElongatedClusters) {
     GenerateElongatedClusters();
-  } else if (type_ == DatasetType::ring) {
+  } else if (type_ == DatasetType::TwoMoons) {
+    GenerateTwoMoons();
+  } else if (type_ == DatasetType::Ring) {
     GenerateRing();
   }
   return points_;
@@ -78,4 +83,53 @@ double DatasetGenerator::GenerateGaussianOffset() {
 
 bool DatasetGenerator::IsValidPoint(const double x, const double y) const {
   return (x > kWorldMin_ && x < KWorldMax_ && y > kWorldMin_ && y < KWorldMax_);
+}
+
+void DatasetGenerator::GenerateElongatedClusters() {
+  std::normal_distribution<double> offset(0.0, standard_deviation_);
+  for (int i = 0; i < point_count_; ++i) {
+    const double centre = i < point_count_ / 2 ? kWorldMin_ + 300.0
+                                               : kWorldMin_ + 700.0;
+    const double x = std::clamp(centre + offset(rng_) * 2.5, 
+                                static_cast<double>(kWorldMin_ + 1),
+                                static_cast<double>(KWorldMax_ - 1));
+    const double y = std::clamp(kWorldMin_ + 500.0 + offset(rng_),
+                                static_cast<double>(kWorldMin_ + 1),
+                                static_cast<double>(KWorldMax_ - 1));
+    points_.emplace_back(x, y, 0);
+  }
+}
+
+void DatasetGenerator::GenerateRing() {
+  constexpr double kPi = 3.14159265358979323846;
+  std::uniform_real_distribution<double> angle(0.0, 2.0 * kPi);
+  std::normal_distribution<double> radius(280.0, standard_deviation_ * 0.25);
+  for (int i = 0; i < point_count_; ++i) {
+    const double r = radius(rng_);
+    const double a = angle(rng_);
+    points_.emplace_back(
+        std::clamp(kWorldMin_ + 500.0 + r * std::cos(a),
+                   static_cast<double>(kWorldMin_ + 1),
+                   static_cast<double>(KWorldMax_ - 1)),
+        std::clamp(kWorldMin_ + 500.0 + r * std::sin(a),
+                   static_cast<double>(kWorldMin_ + 1),
+                   static_cast<double>(KWorldMax_ - 1)),
+        0);
+  }
+}
+
+void DatasetGenerator::GenerateTwoMoons() {
+  constexpr double kPi = 3.14159265358979323846;
+  std::uniform_real_distribution<double> angle(0.0, kPi);
+  std::normal_distribution<double> noise(0.0, standard_deviation_ * 0.15);
+  for (int i = 0; i < point_count_; ++i) {
+    const double a = angle(rng_);
+    const bool second = i >= point_count_ / 2;
+    const double x = 500.0 + 280.0 * std::cos(a) + noise(rng_) +
+                     (second ? 40.0 : -40.0);
+    const double y = 500.0 + (second ? -280.0 * std::sin(a) : 280.0 * std::sin(a)) +
+                     noise(rng_);
+    points_.emplace_back(std::clamp(x, 1.0, 999.0),
+                         std::clamp(y, 1.0, 999.0), 0);
+  }
 }
