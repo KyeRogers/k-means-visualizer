@@ -88,7 +88,8 @@ void Simulator::LoadFromFile(const std::string& filename) {
 
 void Simulator::GenerateRandomDataset(const int point_count) {
   dataset_generator_.SetDataset(
-      seed_, rng_, DatasetType::Random, std::max(1, point_count), 3, 30, 30);
+      seed_, rng_, DatasetType::Random, std::max(1, point_count), 3, 30, 30,
+      250);
   points_ = dataset_generator_.Generate();
   centroids_.clear();
   initial_centroids_.clear();
@@ -153,7 +154,8 @@ void Simulator::Run() {
           std::max(1, events.dataset_points),
           std::max(1, events.dataset_blobs),
           std::max(1, events.dataset_deviation_x),
-          std::max(1, events.dataset_deviation_y));
+          std::max(1, events.dataset_deviation_y),
+          std::max(1, events.dataset_ring_radius));
       points_ = dataset_generator_.Generate();
       centroids_.clear();
       initial_centroids_.clear();

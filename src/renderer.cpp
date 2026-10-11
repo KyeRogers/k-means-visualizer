@@ -76,6 +76,8 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
                   dataset_deviation_x_active_);
     ReadTextInput(dataset_deviation_y_input_, true,
                   dataset_deviation_y_active_);
+    ReadTextInput(dataset_ring_radius_input_, true,
+                  dataset_ring_radius_active_);
     if (IsKeyPressed(KEY_ESCAPE) && !seed_active_) {
       events.main_menu = true;
       return events;
@@ -87,6 +89,7 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       events.dataset_blobs = selected_dataset_blobs_;
       events.dataset_deviation_x = selected_dataset_deviation_x_;
       events.dataset_deviation_y = selected_dataset_deviation_y_;
+      events.dataset_ring_radius = selected_dataset_ring_radius_;
       events.dataset_seed = GetRandomValue(-1000000000, 1000000000);
     }
     if (IsKeyPressed(KEY_P)) {
@@ -117,26 +120,43 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       selected_dataset_points_ = std::min(1000, selected_dataset_points_ + 10);
     if (IsKeyPressed(KEY_DOWN))
       selected_dataset_points_ = std::max(10, selected_dataset_points_ - 10);
-    if (IsKeyPressed(KEY_COMMA))
+    const bool blobs =
+        selected_dataset_type_ == DatasetType::Blobs ||
+        selected_dataset_type_ == DatasetType::ElongatedClusters;
+    if (blobs && IsKeyPressed(KEY_COMMA))
       selected_dataset_blobs_ = std::max(1, selected_dataset_blobs_ - 1);
-    if (IsKeyPressed(KEY_PERIOD))
+    if (blobs && IsKeyPressed(KEY_PERIOD))
       selected_dataset_blobs_ = std::min(12, selected_dataset_blobs_ + 1);
-    if (IsKeyPressed(KEY_J))
+    const bool needs_deviation =
+        selected_dataset_type_ != DatasetType::Random;
+    const bool elongated =
+        selected_dataset_type_ == DatasetType::ElongatedClusters;
+    const bool ring = selected_dataset_type_ == DatasetType::Ring;
+    if (needs_deviation && IsKeyPressed(KEY_J))
       selected_dataset_deviation_x_ =
           std::max(1, selected_dataset_deviation_x_ - 5);
-    if (IsKeyPressed(KEY_K))
+    if (needs_deviation && IsKeyPressed(KEY_K))
       selected_dataset_deviation_x_ =
           std::min(200, selected_dataset_deviation_x_ + 5);
-    if (IsKeyPressed(KEY_U))
+    if (elongated && IsKeyPressed(KEY_U))
       selected_dataset_deviation_y_ =
           std::max(1, selected_dataset_deviation_y_ - 5);
-    if (IsKeyPressed(KEY_I))
+    if (elongated && IsKeyPressed(KEY_I))
       selected_dataset_deviation_y_ =
           std::min(200, selected_dataset_deviation_y_ + 5);
+    if (ring && IsKeyPressed(KEY_N))
+      selected_dataset_ring_radius_ =
+          std::max(1, selected_dataset_ring_radius_ - 10);
+    if (ring && IsKeyPressed(KEY_B))
+      selected_dataset_ring_radius_ =
+          std::min(499, selected_dataset_ring_radius_ + 10);
     if (!dataset_deviation_x_active_)
       dataset_deviation_x_input_ = std::to_string(selected_dataset_deviation_x_);
     if (!dataset_deviation_y_active_)
       dataset_deviation_y_input_ = std::to_string(selected_dataset_deviation_y_);
+    if (!dataset_ring_radius_active_)
+      dataset_ring_radius_input_ =
+          std::to_string(selected_dataset_ring_radius_);
 
     auto commit_seed = [&]() {
       char* end = nullptr;
@@ -180,10 +200,19 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       commit_deviation(dataset_deviation_y_input_,
                        selected_dataset_deviation_y_,
                        dataset_deviation_y_active_);
+    if (dataset_ring_radius_active_ && IsKeyPressed(KEY_ENTER)) {
+      char* end = nullptr;
+      long value = std::strtol(dataset_ring_radius_input_.c_str(), &end, 10);
+      if (end != dataset_ring_radius_input_.c_str() && *end == '\0')
+        selected_dataset_ring_radius_ =
+            std::clamp(static_cast<int>(value), 1, 499);
+      dataset_ring_radius_input_ = std::to_string(selected_dataset_ring_radius_);
+      dataset_ring_radius_active_ = false;
+    }
 
     if (IsKeyPressed(KEY_ENTER) && !seed_active_ &&
         !dataset_seed_active_ && !dataset_deviation_x_active_ &&
-        !dataset_deviation_y_active_) {
+        !dataset_deviation_y_active_ && !dataset_ring_radius_active_) {
       if (selected_method_ == CentroidInitialization::Manual) {
         manual_centroids_.clear();
         screen_ = Screen::Manual;
@@ -217,6 +246,7 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       Rectangle blob_plus = {140, 640, 42, 32};
       Rectangle deviation_x_box = {310, 640, 90, 32};
       Rectangle deviation_y_box = {500, 640, 90, 32};
+      Rectangle ring_radius_box = {700, 640, 180, 32};
       if (CheckCollisionPointRec(mouse, seed_box)) {
         seed_active_ = true;
       } else if (CheckCollisionPointRec(mouse, dataset_seed_box)) {
@@ -246,14 +276,23 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
         selected_dataset_type_ = DatasetType::TwoMoons;
       } else if (CheckCollisionPointRec(mouse, data_ring)) {
         selected_dataset_type_ = DatasetType::Ring;
-      } else if (CheckCollisionPointRec(mouse, blob_minus)) {
+      } else if ((selected_dataset_type_ == DatasetType::Blobs ||
+                  selected_dataset_type_ == DatasetType::ElongatedClusters) &&
+                 CheckCollisionPointRec(mouse, blob_minus)) {
         selected_dataset_blobs_ = std::max(1, selected_dataset_blobs_ - 1);
-      } else if (CheckCollisionPointRec(mouse, blob_plus)) {
+      } else if ((selected_dataset_type_ == DatasetType::Blobs ||
+                  selected_dataset_type_ == DatasetType::ElongatedClusters) &&
+                 CheckCollisionPointRec(mouse, blob_plus)) {
         selected_dataset_blobs_ = std::min(12, selected_dataset_blobs_ + 1);
-      } else if (CheckCollisionPointRec(mouse, deviation_x_box)) {
+      } else if (needs_deviation &&
+                 CheckCollisionPointRec(mouse, deviation_x_box)) {
         dataset_deviation_x_active_ = true;
-      } else if (CheckCollisionPointRec(mouse, deviation_y_box)) {
+      } else if (selected_dataset_type_ == DatasetType::ElongatedClusters &&
+                 CheckCollisionPointRec(mouse, deviation_y_box)) {
         dataset_deviation_y_active_ = true;
+      } else if (selected_dataset_type_ == DatasetType::Ring &&
+                 CheckCollisionPointRec(mouse, ring_radius_box)) {
+        dataset_ring_radius_active_ = true;
       } else if (CheckCollisionPointRec(mouse, random_data)) {
         events.generate_dataset = true;
         events.dataset_points = selected_dataset_points_;
@@ -261,6 +300,7 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
         events.dataset_blobs = selected_dataset_blobs_;
         events.dataset_deviation_x = selected_dataset_deviation_x_;
         events.dataset_deviation_y = selected_dataset_deviation_y_;
+        events.dataset_ring_radius = selected_dataset_ring_radius_;
         events.dataset_seed = GetRandomValue(-1000000000, 1000000000);
       } else if (CheckCollisionPointRec(mouse, start)) {
         if (selected_method_ == CentroidInitialization::Manual) {
@@ -389,6 +429,7 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
     events.dataset_blobs = selected_dataset_blobs_;
     events.dataset_deviation_x = selected_dataset_deviation_x_;
     events.dataset_deviation_y = selected_dataset_deviation_y_;
+    events.dataset_ring_radius = selected_dataset_ring_radius_;
     events.dataset_seed = GetRandomValue(-1000000000, 1000000000);
   }
   if (IsKeyPressed(KEY_SPACE)) events.step = true;
@@ -436,6 +477,7 @@ Renderer::InputEvents Renderer::PollInput(bool converged) {
       events.dataset_blobs = selected_dataset_blobs_;
       events.dataset_deviation_x = selected_dataset_deviation_x_;
       events.dataset_deviation_y = selected_dataset_deviation_y_;
+      events.dataset_ring_radius = selected_dataset_ring_radius_;
       events.dataset_seed = GetRandomValue(-1000000000, 1000000000);
     } else if (CheckCollisionPointRec(mouse, load)) {
       filename_active_ = true;
@@ -563,23 +605,42 @@ void Renderer::DrawSetup() const {
   std::snprintf(value, sizeof(value), "POINTS: %d  (Up/Down)",
                 selected_dataset_points_);
   DrawText(value, 40, 590, 16, kText);
-  DrawText("BLOBS", 40, 618, 14, kMuted);
-  DrawButton({40, 640, 42, 32}, "-");
-  std::snprintf(value, sizeof(value), "%d", selected_dataset_blobs_);
-  DrawText(value, 100, 644, 20, kText);
-  DrawButton({140, 640, 42, 32}, "+");
-  DrawText("[, ] or buttons", 195, 648, 14, kMuted);
-  DrawText(selected_dataset_type_ == DatasetType::ElongatedClusters
-               ? "STD DEV X / Y"
-               : "STD DEV",
-           310, 618, 14, kMuted);
-  DrawTextInput({310, 640, 90, 32}, dataset_deviation_x_input_,
-                dataset_deviation_x_active_);
-  DrawTextInput({500, 640, 90, 32}, dataset_deviation_y_input_,
-                dataset_deviation_y_active_);
-  DrawText("X", 405, 648, 14, kMuted);
-  DrawText("Y", 595, 648, 14, kMuted);
-  DrawText("J/K: X   U/I: Y", 620, 648, 14, kMuted);
+  const bool random = selected_dataset_type_ == DatasetType::Random;
+  const bool blobs = selected_dataset_type_ == DatasetType::Blobs ||
+                     selected_dataset_type_ == DatasetType::ElongatedClusters;
+  const bool elongated =
+      selected_dataset_type_ == DatasetType::ElongatedClusters;
+  const bool ring = selected_dataset_type_ == DatasetType::Ring;
+  if (blobs) {
+    DrawText("BLOBS", 40, 618, 14, kMuted);
+    DrawButton({40, 640, 42, 32}, "-");
+    std::snprintf(value, sizeof(value), "%d", selected_dataset_blobs_);
+    DrawText(value, 100, 644, 20, kText);
+    DrawButton({140, 640, 42, 32}, "+");
+    DrawText("[, ] or buttons", 195, 648, 14, kMuted);
+  }
+  const bool needs_deviation = !random;
+  if (needs_deviation) {
+    DrawText(ring ? "STD DEV (MAX THICKNESS)"
+                  : (elongated ? "STD DEV X / Y" : "STD DEV"),
+             310, 618, 14, kMuted);
+    DrawTextInput({310, 640, 90, 32}, dataset_deviation_x_input_,
+                  dataset_deviation_x_active_);
+    DrawText("J/K", 405, 648, 14, kMuted);
+  }
+  if (elongated) {
+    DrawTextInput({500, 640, 90, 32}, dataset_deviation_y_input_,
+                  dataset_deviation_y_active_);
+    DrawText("Y", 595, 648, 14, kMuted);
+    DrawText("U/I", 620, 648, 14, kMuted);
+  }
+  if (ring) {
+    DrawText("RING RADIUS", 700, 618, 14, kMuted);
+    DrawTextInput({700, 640, 180, 32}, dataset_ring_radius_input_,
+                  dataset_ring_radius_active_);
+    DrawText("average radius (N/B)", 700, 678, 14, kMuted);
+    DrawText("thickness = STD DEV (max)", 900, 648, 14, kAccent);
+  }
 
   DrawButton({static_cast<float>(screen_width_ - 260), 190, 210, 44},
              selected_method_ == CentroidInitialization::Manual

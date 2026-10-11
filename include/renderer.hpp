@@ -26,6 +26,7 @@ class Renderer {
     int dataset_blobs = 3;
     int dataset_deviation_x = 30;
     int dataset_deviation_y = 30;
+    int dataset_ring_radius = 250;
     bool add_point = false;
     double point_x = 0.0;
     double point_y = 0.0;
@@ -110,12 +111,14 @@ class Renderer {
   bool dataset_seed_active_ = false;
   bool dataset_deviation_x_active_ = false;
   bool dataset_deviation_y_active_ = false;
+  bool dataset_ring_radius_active_ = false;
   bool filename_active_ = false;
   std::string seed_input_ = "42";
   std::string dataset_seed_input_ = "1337";
   std::string filename_input_;
   std::string dataset_deviation_x_input_ = "30";
   std::string dataset_deviation_y_input_ = "30";
+  std::string dataset_ring_radius_input_ = "250";
   int selected_seed_ = 42;
   int selected_dataset_seed_ = 1337;
   int selected_k_ = 2;
@@ -125,6 +128,7 @@ class Renderer {
   int selected_dataset_blobs_ = 3;
   int selected_dataset_deviation_x_ = 30;
   int selected_dataset_deviation_y_ = 30;
+  int selected_dataset_ring_radius_ = 250;
   CentroidInitialization selected_method_ =
       CentroidInitialization::Randomized;
   std::vector<Vector2> manual_centroids_;

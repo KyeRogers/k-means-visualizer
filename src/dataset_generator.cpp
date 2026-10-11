@@ -12,6 +12,7 @@ DatasetGenerator::DatasetGenerator(const int kWorldMin, const int kWorldMax)
       blob_count_{0},
       standard_deviation_x_{30},
       standard_deviation_y_{30},
+      ring_radius_{100},
       kWorldMin_{kWorldMin},
       KWorldMax_{kWorldMax} {}
 
@@ -19,7 +20,7 @@ void DatasetGenerator::SetDataset(const int seed, std::mt19937 rng,
                                   DatasetType type, const int points,
                                   const int blob_count,
                                   const int standard_deviation_x,
-                                  const int standard_deviation_y) {
+                                  const int standard_deviation_y, const int ring_radius) {
   seed_ = seed;
   rng_ = rng;
   type_ = type;
@@ -27,6 +28,7 @@ void DatasetGenerator::SetDataset(const int seed, std::mt19937 rng,
   blob_count_ = blob_count;
   standard_deviation_x_ = standard_deviation_x;
   standard_deviation_y_ = standard_deviation_y;
+  ring_radius_ = ring_radius;
 }
 
 std::vector<Point> DatasetGenerator::Generate() {
@@ -49,6 +51,11 @@ void DatasetGenerator::GenerateRandom() {
   for (int i{0}; i < point_count_; i++) {
     points_.push_back(Point(GenerateRandomDouble(), GenerateRandomDouble(), 0));
   }
+}
+
+double DatasetGenerator::GenerateAngle() {
+  std::uniform_real_distribution<double> rotation_dist(0.0, M_PI);
+  return rotation_dist(rng_);
 }
 
 void DatasetGenerator::GenerateBlobs() {
@@ -95,11 +102,10 @@ void DatasetGenerator::GenerateElongatedClusters() {
   blobs.reserve(blob_count_);
 
   // Generate blob centers and random rotations.
-  std::uniform_real_distribution<double> rotation_dist(0.0, M_PI);
 
   for (int i = 0; i < blob_count_; ++i) {
     Blob blob{GenerateRandomDouble(), GenerateRandomDouble(),
-              rotation_dist(rng_)};
+              GenerateAngle()};
 
     blobs.push_back(blob);
   }
@@ -144,6 +150,26 @@ void DatasetGenerator::GenerateElongatedClusters() {
   }
 }
 
-void DatasetGenerator::GenerateRing() {}
+void DatasetGenerator::GenerateRing() {
+
+  const double centre_x{500.0}, centre_y{500.0};
+
+  double x_coordenate, y_coordenate;
+
+  for (int i{0}; i < point_count_; i++) {
+    double angle = GenerateAngle() * 2; 
+    const double cos_rotation = cos(angle);
+    const double sin_rotation = sin(angle);
+    do {
+      double offset = GenerateGaussianOffset(standard_deviation_x_);
+      double radius = ring_radius_ + offset;
+      x_coordenate = centre_x + radius * cos_rotation;
+      y_coordenate = centre_y + radius * sin_rotation;
+    } while (!IsValidPoint(x_coordenate, y_coordenate));
+    
+    points_.emplace_back(Point(x_coordenate, y_coordenate, 0));
+  }
+
+}
 
 void DatasetGenerator::GenerateTwoMoons() {}
